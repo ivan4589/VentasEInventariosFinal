@@ -16,6 +16,8 @@ import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
+    UsersModule,
+    AuthModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),
