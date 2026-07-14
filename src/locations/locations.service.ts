@@ -1,15 +1,33 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 
 @Injectable()
 export class LocationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(createLocationDto: CreateLocationDto) {
+    const existingLocation = await this.prisma.location.findUnique({
+      where: { name: createLocationDto.name },
+    });
+
+    if (existingLocation) {
+      throw new ConflictException('La localidad ya existe');
+    }
+
+    return this.prisma.location.create({
+      data: {
+        name: createLocationDto.name,
+      },
+    });
+  }
 
   async findAll() {
     return this.prisma.location.findMany({
-      orderBy: { name: 'asc' },
+      orderBy: {
+        name: 'asc',
+      },
     });
   }
 
@@ -17,32 +35,30 @@ export class LocationsService {
     const location = await this.prisma.location.findUnique({
       where: { id },
     });
-    if (!location) throw new NotFoundException(`Localidad con ID ${id} no encontrada`);
+
+    if (!location) {
+      throw new NotFoundException(`Localidad con ID ${id} no encontrada`);
+    }
+
     return location;
   }
 
-  async create(createLocationDto: CreateLocationDto) {
-    const existing = await this.prisma.location.findUnique({
-      where: { name: createLocationDto.name },
-    });
-    if (existing) {
-      throw new ConflictException('La localidad ya existe');
-    }
-    return this.prisma.location.create({
-      data: createLocationDto,
-    });
-  }
-
   async update(id: string, updateLocationDto: UpdateLocationDto) {
-    const location = await this.prisma.location.findUnique({ where: { id } });
-    if (!location) throw new NotFoundException(`Localidad con ID ${id} no encontrada`);
+    const location = await this.prisma.location.findUnique({
+      where: { id },
+    });
+
+    if (!location) {
+      throw new NotFoundException(`Localidad con ID ${id} no encontrada`);
+    }
 
     if (updateLocationDto.name) {
-      const existing = await this.prisma.location.findUnique({
+      const existingLocation = await this.prisma.location.findUnique({
         where: { name: updateLocationDto.name },
       });
-      if (existing && existing.id !== id) {
-        throw new ConflictException('El nombre de localidad ya está en uso');
+
+      if (existingLocation && existingLocation.id !== id) {
+        throw new ConflictException('Ya existe otra localidad con ese nombre');
       }
     }
 
@@ -53,8 +69,20 @@ export class LocationsService {
   }
 
   async remove(id: string) {
-    const location = await this.prisma.location.findUnique({ where: { id } });
-    if (!location) throw new NotFoundException(`Localidad con ID ${id} no encontrada`);
-    return this.prisma.location.delete({ where: { id } });
+    const location = await this.prisma.location.findUnique({
+      where: { id },
+    });
+
+    if (!location) {
+      throw new NotFoundException(`Localidad con ID ${id} no encontrada`);
+    }
+
+    await this.prisma.location.delete({
+      where: { id },
+    });
+
+    return {
+      message: 'Localidad eliminada correctamente',
+    };
   }
 }
