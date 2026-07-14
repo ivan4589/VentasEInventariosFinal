@@ -18,6 +18,7 @@ import { ReportsModule } from './reports/reports.module';
   imports: [
     UsersModule,
     AuthModule,
+    LocationsModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),
