@@ -27,6 +27,8 @@ model User {
   role      Role     @default(VENDEDOR)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  purchases Purchase[]
 }
 
 model Location {
@@ -59,15 +61,15 @@ enum ClientType {
 }
 
 model Provider {
-  id          String    @id @default(cuid())
-  companyName String    @unique // Nombre de la empresa (ej: "Molino Andino")
+  id          String     @id @default(cuid())
+  companyName String     @unique // Nombre de la empresa (ej: "Molino Andino")
   contactName String? // Persona responsable (ej: "Juan Carlos Apolo")
   phone       String?
   email       String?
   products    Product[] // Un proveedor puede tener muchos productos
-  //purchases   Purchase[] // Un proveedor puede tener muchas compras
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  purchases   Purchase[] // Un proveedor puede tener muchas compras
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   @@map("providers")
 }
@@ -97,75 +99,75 @@ model SubCategory {
 
 // ====== MODELOS EXISTENTES (actualizados) ======
 model Product {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  providerId  String
-  provider    Provider @relation(fields: [providerId], references: [id])
-  categoryId  String
-  category    Category @relation(fields: [categoryId], references: [id])
+  id            String       @id @default(cuid())
+  name          String
+  description   String?
+  providerId    String
+  provider      Provider     @relation(fields: [providerId], references: [id])
+  categoryId    String
+  category      Category     @relation(fields: [categoryId], references: [id])
   subCategoryId String?
-  subCategory SubCategory? @relation(fields: [subCategoryId], references: [id])
-  weight      String?
-  
+  subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id])
+  weight        String?
+
   // Precios
-  purchasePrice Float   // Último precio de compra
-  priceNormal   Float
-  priceCamino   Float
-  priceEspecial Float
+  purchasePrice  Float // Último precio de compra
+  priceNormal    Float
+  priceCamino    Float
+  priceEspecial  Float
   priceMayorista Float?
-  
+
   // Porcentajes de ganancia (referenciales)
   markupNormal    Float @default(10)
   markupCamino    Float @default(10)
   markupEspecial  Float @default(10)
   markupMayorista Float @default(10)
-  
+
   // Stock
-  stock       Float @default(0)
-  minStock    Float @default(0)
-  unit        String @default("UNIDAD")
-  reserveQuantity Float @default(0)
-  additionalInfo String?
-  imageUrl    String?
-  
+  stock           Float   @default(0)
+  minStock        Float   @default(0)
+  unit            String  @default("UNIDAD")
+  reserveQuantity Float   @default(0)
+  additionalInfo  String?
+  imageUrl        String?
+
   // Relaciones
   //saleDetails SaleDetail[]
   //inventoryMovements InventoryMovement[]
   purchaseDetails PurchaseDetail[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 }
 
 model Purchase {
-  id          String   @id @default(cuid())
-  providerId  String
-  provider    Provider @relation(fields: [providerId], references: [id])
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  date        DateTime @default(now())
-  status      PurchaseStatus @default(PENDING)
-  total       Float
+  id           String           @id @default(cuid())
+  providerId   String
+  provider     Provider         @relation(fields: [providerId], references: [id])
+  userId       Int
+  user         User             @relation(fields: [userId], references: [id])
+  date         DateTime         @default(now())
+  status       PurchaseStatus   @default(PENDING)
+  total        Float
   observations String?
-  pdfUrl      String?  // Ruta del PDF generado
-  details     PurchaseDetail[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  pdfUrl       String?
+  details      PurchaseDetail[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   @@map("purchases")
 }
 
 model PurchaseDetail {
-  id          String   @id @default(cuid())
-  purchaseId  String
-  purchase    Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  quantity    Float
-  unitPrice   Float    // Precio de compra en ese momento
-  subtotal    Float
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  purchaseId String
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Float
+  unitPrice  Float // Precio de compra en ese momento
+  subtotal   Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@map("purchase_details")
 }
