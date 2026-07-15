@@ -29,6 +29,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   purchases Purchase[]
+  sales     Sale[]
 }
 
 model Location {
@@ -50,6 +51,8 @@ model Client {
   additionalInfo String?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
+
+  sales Sale[]
 
   @@map("clients")
 }
@@ -110,21 +113,18 @@ model Product {
   subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id])
   weight        String?
 
-  // Precios
-  purchasePrice        Float // Último precio de compra
+  purchasePrice        Float
   priceNormal          Float
   priceCamino          Float
   priceEspecial        Float
   priceMayorista       Float?
   minQuantityWholesale Int?
 
-  // Porcentajes de ganancia (referenciales)
   markupNormal    Float @default(10)
   markupCamino    Float @default(10)
   markupEspecial  Float @default(10)
   markupMayorista Float @default(10)
 
-  // Stock
   stock           Float   @default(0)
   minStock        Float   @default(0)
   unit            String  @default("UNIDAD")
@@ -132,12 +132,11 @@ model Product {
   additionalInfo  String?
   imageUrl        String?
 
-  // Relaciones
-  //saleDetails SaleDetail[]
-  //inventoryMovements InventoryMovement[]
   purchaseDetails PurchaseDetail[]
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  saleDetails     SaleDetail[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Purchase {
@@ -180,36 +179,41 @@ enum PurchaseStatus {
 }
 
 model Sale {
-  id            String      @id @default(cuid())
-  saleNumber    String      @unique  // Ej: 12-07-001
+  id            String        @id @default(cuid())
+  saleNumber    String        @unique
   clientId      String
-  client        Client      @relation(fields: [clientId], references: [id])
-  userId        String
-  user          User        @relation(fields: [userId], references: [id])
-  date          DateTime    @default(now())
-  status        SaleStatus  @default(PENDING)
-  paymentStatus PaymentStatus @default(PENDING) // PENDING, PARTIALLY_PAID, PAID
+  client        Client        @relation(fields: [clientId], references: [id])
+  userId        Int
+  user          User          @relation(fields: [userId], references: [id])
+  date          DateTime      @default(now())
+  status        SaleStatus    @default(PENDING)
+  paymentStatus PaymentStatus @default(PENDING)
   total         Float
-  discount      Float       @default(0)
+  discount      Float         @default(0)
   observations  String?
-  pdfUrl        String?     // Ruta del PDF generado
-  //details       SaleDetail[]
-  //payments      Payment[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  pdfUrl        String?
+
+  details SaleDetail[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sales")
 }
 
 model SaleDetail {
-  id          String   @id @default(cuid())
-  saleId      String
-  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  quantity    Float
-  unitPrice   Float    // Precio de venta en ese momento (puede ser editado)
-  subtotal    Float
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  saleId    String
+  sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Float
+  unitPrice Float
+  subtotal  Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sale_details")
 }
 
 enum SaleStatus {
@@ -219,7 +223,7 @@ enum SaleStatus {
 }
 
 enum PaymentStatus {
-  PENDING      // Por cobrar
+  PENDING // Por cobrar
   PARTIALLY_PAID
   PAID
 }
