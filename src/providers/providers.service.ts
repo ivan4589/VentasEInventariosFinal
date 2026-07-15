@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
@@ -6,31 +10,47 @@ import { ProviderResponseDto } from './dto/provider-response.dto';
 
 @Injectable()
 export class ProvidersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private toResponse(provider: any): ProviderResponseDto {
-    const { ...rest } = provider;
-    return rest;
+    return provider;
   }
 
   async findAll(): Promise<ProviderResponseDto[]> {
-    const providers = await this.prisma.provider.findMany();
-    return providers.map(p => this.toResponse(p));
+    const providers = await this.prisma.provider.findMany({
+      orderBy: {
+        companyName: 'asc',
+      },
+    });
+
+    return providers.map((provider) => this.toResponse(provider));
   }
 
   async findOne(id: string): Promise<ProviderResponseDto> {
-    const provider = await this.prisma.provider.findUnique({ where: { id } });
-    if (!provider) throw new NotFoundException(`Proveedor con ID ${id} no encontrado`);
+    const provider = await this.prisma.provider.findUnique({
+      where: { id },
+    });
+
+    if (!provider) {
+      throw new NotFoundException(`Proveedor con ID ${id} no encontrado`);
+    }
+
     return this.toResponse(provider);
   }
 
-  async create(createProviderDto: CreateProviderDto): Promise<ProviderResponseDto> {
-    // Verificar si ya existe un proveedor con el mismo nombre de empresa
+  async create(
+    createProviderDto: CreateProviderDto,
+  ): Promise<ProviderResponseDto> {
     const existing = await this.prisma.provider.findUnique({
-      where: { companyName: createProviderDto.companyName },
+      where: {
+        companyName: createProviderDto.companyName,
+      },
     });
+
     if (existing) {
-      throw new ConflictException(`Ya existe un proveedor con el nombre "${createProviderDto.companyName}"`);
+      throw new ConflictException(
+        `Ya existe un proveedor con el nombre "${createProviderDto.companyName}"`,
+      );
     }
 
     const provider = await this.prisma.provider.create({
@@ -41,20 +61,33 @@ export class ProvidersService {
         email: createProviderDto.email,
       },
     });
+
     return this.toResponse(provider);
   }
 
-  async update(id: string, updateProviderDto: UpdateProviderDto): Promise<ProviderResponseDto> {
-    const provider = await this.prisma.provider.findUnique({ where: { id } });
-    if (!provider) throw new NotFoundException(`Proveedor con ID ${id} no encontrado`);
+  async update(
+    id: string,
+    updateProviderDto: UpdateProviderDto,
+  ): Promise<ProviderResponseDto> {
+    const provider = await this.prisma.provider.findUnique({
+      where: { id },
+    });
 
-    // Si se actualiza el nombre, verificar que no esté en uso por otro proveedor
+    if (!provider) {
+      throw new NotFoundException(`Proveedor con ID ${id} no encontrado`);
+    }
+
     if (updateProviderDto.companyName) {
       const existing = await this.prisma.provider.findUnique({
-        where: { companyName: updateProviderDto.companyName },
+        where: {
+          companyName: updateProviderDto.companyName,
+        },
       });
+
       if (existing && existing.id !== id) {
-        throw new ConflictException(`Ya existe un proveedor con el nombre "${updateProviderDto.companyName}"`);
+        throw new ConflictException(
+          `Ya existe un proveedor con el nombre "${updateProviderDto.companyName}"`,
+        );
       }
     }
 
@@ -67,21 +100,25 @@ export class ProvidersService {
         email: updateProviderDto.email,
       },
     });
+
     return this.toResponse(updated);
   }
 
-  async remove(id: string): Promise<void> {
-    const provider = await this.prisma.provider.findUnique({ where: { id } });
-    if (!provider) throw new NotFoundException(`Proveedor con ID ${id} no encontrado`);
-
-    // Verificar si el proveedor tiene productos asociados
-    const productsCount = await this.prisma.product.count({
-      where: { providerId: id },
+  async remove(id: string) {
+    const provider = await this.prisma.provider.findUnique({
+      where: { id },
     });
-    if (productsCount > 0) {
-      throw new ConflictException(`No se puede eliminar el proveedor porque tiene ${productsCount} productos asociados`);
+
+    if (!provider) {
+      throw new NotFoundException(`Proveedor con ID ${id} no encontrado`);
     }
 
-    await this.prisma.provider.delete({ where: { id } });
+    await this.prisma.provider.delete({
+      where: { id },
+    });
+
+    return {
+      message: 'Proveedor eliminado correctamente',
+    };
   }
 }

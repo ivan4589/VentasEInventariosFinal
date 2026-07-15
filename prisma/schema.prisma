@@ -61,7 +61,7 @@ enum ClientType {
 model Provider {
   id          String   @id @default(cuid())
   companyName String   @unique // Nombre de la empresa (ej: "Molino Andino")
-  contactName String?  // Persona responsable (ej: "Juan Carlos Apolo")
+  contactName String? // Persona responsable (ej: "Juan Carlos Apolo")
   phone       String?
   email       String?
   //products    Product[] // Un proveedor puede tener muchos productos
