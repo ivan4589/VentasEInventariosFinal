@@ -207,31 +207,49 @@ export class ProductsService {
     return this.toResponse(updated);
   }
 
-  async remove(id: string): Promise<void> {
+    async remove(id: string) {
     const product = await this.prisma.product.findUnique({ where: { id } });
-    if (!product) throw new NotFoundException(`Producto con ID ${id} no encontrado`);
 
-    // Verificar si tiene detalles de venta (no se puede eliminar si ya se vendió)
-    const saleDetailsCount = await this.prisma.saleDetail.count({
-      where: { productId: id },
-    });
-    if (saleDetailsCount > 0) {
-      throw new ConflictException(
-        `No se puede eliminar el producto porque tiene ${saleDetailsCount} ventas asociadas`
-      );
+    if (!product) {
+      throw new NotFoundException(`Producto con ID ${id} no encontrado`);
     }
 
-    await this.prisma.product.delete({ where: { id } });
+    await this.prisma.product.delete({
+      where: { id },
+    });
+
+    return {
+      message: 'Producto eliminado correctamente',
+    };
   }
 
-  // Método para actualizar el precio de compra y automáticamente ajustar precios de venta (si se desea)
-  async updatePurchasePrice(id: string, newPurchasePrice: number): Promise<ProductResponseDto> {
+  async updatePurchasePrice(
+    id: string,
+    newPurchasePrice: number,
+  ): Promise<ProductResponseDto> {
     const product = await this.prisma.product.findUnique({ where: { id } });
-    if (!product) throw new NotFoundException(`Producto con ID ${id} no encontrado`);
 
-    // Ejemplo de lógica: actualizar precios de venta basados en el nuevo precio de compra
-    // (puedes definir tus propias reglas de negocio)
+    if (!product) {
+      throw new NotFoundException(`Producto con ID ${id} no encontrado`);
+    }
+
+    if (newPurchasePrice < 0) {
+      throw new BadRequestException('El precio de compra no puede ser negativo');
+    }
+
+    if (product.purchasePrice <= 0) {
+      const updated = await this.prisma.product.update({
+        where: { id },
+        data: {
+          purchasePrice: newPurchasePrice,
+        },
+      });
+
+      return this.toResponse(updated);
+    }
+
     const factor = newPurchasePrice / product.purchasePrice;
+
     const updated = await this.prisma.product.update({
       where: { id },
       data: {
@@ -239,9 +257,12 @@ export class ProductsService {
         priceNormal: product.priceNormal * factor,
         priceCamino: product.priceCamino * factor,
         priceEspecial: product.priceEspecial * factor,
-        priceMayorista: product.priceMayorista ? product.priceMayorista * factor : undefined,
+        priceMayorista: product.priceMayorista
+          ? product.priceMayorista * factor
+          : undefined,
       },
     });
+
     return this.toResponse(updated);
   }
 }

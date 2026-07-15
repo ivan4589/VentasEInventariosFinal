@@ -1,22 +1,31 @@
-import { IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateProductDto {
   @IsString()
+  @IsNotEmpty()
   name: string;
 
   @IsOptional()
   @IsString()
   description?: string;
 
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   providerId: string;
 
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   categoryId: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   subCategoryId?: string;
 
   @IsOptional()

@@ -1,11 +1,21 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
+import { $Enums } from '../../generated/prisma/client';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { Role } from '@prisma/client';
 
 @Controller('products')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -13,7 +23,7 @@ export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Get()
-  @Roles(Role.ADMIN, Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   findAll(
     @Query('search') search?: string,
     @Query('categoryId') categoryId?: string,
@@ -26,32 +36,31 @@ export class ProductsController {
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   findOne(@Param('id') id: string) {
     return this.productsService.findOne(id);
   }
 
   @Post()
-  @Roles(Role.ADMIN)
+  @Roles($Enums.Role.ADMIN)
   create(@Body() createProductDto: CreateProductDto) {
     return this.productsService.create(createProductDto);
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN)
+  @Roles($Enums.Role.ADMIN)
   update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
     return this.productsService.update(id, updateProductDto);
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN)
+  @Roles($Enums.Role.ADMIN)
   remove(@Param('id') id: string) {
     return this.productsService.remove(id);
   }
 
-  // Endpoint específico para actualizar precio de compra y ajustar precios de venta
   @Patch(':id/purchase-price')
-  @Roles(Role.ADMIN)
+  @Roles($Enums.Role.ADMIN)
   updatePurchasePrice(
     @Param('id') id: string,
     @Body('purchasePrice') purchasePrice: number,
