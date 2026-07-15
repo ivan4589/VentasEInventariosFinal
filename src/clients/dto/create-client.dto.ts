@@ -1,5 +1,5 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
-import { ClientType } from '@prisma/client';
+import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { $Enums } from '../../../generated/prisma/client';
 
 export class CreateClientDto {
   @IsString()
@@ -10,11 +10,11 @@ export class CreateClientDto {
   @IsString()
   alias?: string;
 
-  @IsEnum(ClientType)
+  @IsEnum($Enums.ClientType)
   @IsNotEmpty()
-  type: ClientType;
+  type: $Enums.ClientType;
 
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
   locationId: string;
 

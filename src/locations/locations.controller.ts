@@ -22,7 +22,7 @@ export class LocationsController {
   constructor(private readonly locationsService: LocationsService) {}
 
   @Post()
-  @Roles($Enums.Role.ADMIN)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   create(@Body() createLocationDto: CreateLocationDto) {
     return this.locationsService.create(createLocationDto);
   }
@@ -40,7 +40,7 @@ export class LocationsController {
   }
 
   @Patch(':id')
-  @Roles($Enums.Role.ADMIN)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   update(
     @Param('id') id: string,
     @Body() updateLocationDto: UpdateLocationDto,
