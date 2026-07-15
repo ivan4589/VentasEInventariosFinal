@@ -1,11 +1,11 @@
-import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 
 export class CreateSubCategoryDto {
   @IsString()
   @IsNotEmpty()
   name: string;
 
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
   categoryId: string;
 }

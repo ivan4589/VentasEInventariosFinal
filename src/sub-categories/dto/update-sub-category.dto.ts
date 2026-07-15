@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class UpdateSubCategoryDto {
   @IsOptional()
@@ -6,6 +6,6 @@ export class UpdateSubCategoryDto {
   name?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   categoryId?: string;
 }
