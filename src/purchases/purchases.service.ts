@@ -11,7 +11,6 @@ import { ReceivePurchaseDto } from './dto/receive-purchase.dto';
 import { PurchaseResponseDto } from './dto/purchase-response.dto';
 import { ReportsService } from '../reports/reports.service';
 
-
 @Injectable()
 export class PurchasesService {
   constructor(
@@ -118,7 +117,7 @@ export class PurchasesService {
   ): Promise<PurchaseResponseDto> {
     const { updatePrices = true } = receiveDto;
 
-    return this.prisma.$transaction(async (prisma) => {
+    const updated = await this.prisma.$transaction(async (prisma) => {
       const purchase = await prisma.purchase.findUnique({
         where: { id },
         include: {
@@ -153,8 +152,10 @@ export class PurchasesService {
         if (updatePrices) {
           updateData.priceNormal =
             detail.unitPrice * (1 + product.markupNormal / 100);
+
           updateData.priceCamino =
             detail.unitPrice * (1 + product.markupCamino / 100);
+
           updateData.priceEspecial =
             detail.unitPrice * (1 + product.markupEspecial / 100);
 
@@ -170,7 +171,7 @@ export class PurchasesService {
         });
       }
 
-      const updated = await prisma.purchase.update({
+      return prisma.purchase.update({
         where: { id },
         data: {
           status: $Enums.PurchaseStatus.RECEIVED,
@@ -189,37 +190,41 @@ export class PurchasesService {
           },
         },
       });
+    });
 
-      let pdfUrl: string | null = null;
+    let pdfUrl: string | null = null;
 
-      try {
+    try {
       pdfUrl = await this.reportsService.generatePurchasePDF(updated.id);
-      } catch (error) {
-        console.error('Error generando PDF de compra:', error);
-      }
+    } catch (error) {
+      console.error('Error generando PDF de compra:', error);
+    }
 
-      const updatedWithPdf = await prisma.purchase.update({
+    if (pdfUrl) {
+      const updatedWithPdf = await this.prisma.purchase.update({
         where: { id },
         data: {
-        pdfUrl: pdfUrl ?? undefined,
-      },
+          pdfUrl,
+        },
         include: {
-        provider: true,
-        user: true,
-        details: {
-        include: {
-        product: {
-          include: {
-            category: true,
+          provider: true,
+          user: true,
+          details: {
+            include: {
+              product: {
+                include: {
+                  category: true,
+                },
+              },
+            },
           },
         },
-      },
-    },
-  },
-});
+      });
 
-return this.toResponse(updatedWithPdf);
-    });
+      return this.toResponse(updatedWithPdf);
+    }
+
+    return this.toResponse(updated);
   }
 
   async update(
