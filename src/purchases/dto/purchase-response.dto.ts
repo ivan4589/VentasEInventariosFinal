@@ -1,4 +1,4 @@
-import { PurchaseStatus } from '@prisma/client';
+import { $Enums } from '../../../generated/prisma/client';
 
 export class PurchaseDetailResponseDto {
   id: string;
@@ -13,10 +13,10 @@ export class PurchaseResponseDto {
   id: string;
   providerId: string;
   providerName: string;
-  userId: string;
+  userId: number;
   userName: string;
   date: Date;
-  status: PurchaseStatus;
+  status: $Enums.PurchaseStatus;
   total: number;
   observations?: string;
   pdfUrl?: string;

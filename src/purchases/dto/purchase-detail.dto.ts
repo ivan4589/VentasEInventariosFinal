@@ -1,7 +1,7 @@
-import { IsUUID, IsNumber, IsPositive } from 'class-validator';
+import { IsNumber, IsPositive, IsString } from 'class-validator';
 
 export class PurchaseDetailDto {
-  @IsUUID()
+  @IsString()
   productId: string;
 
   @IsNumber()

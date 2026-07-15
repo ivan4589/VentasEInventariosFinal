@@ -111,11 +111,12 @@ model Product {
   weight        String?
 
   // Precios
-  purchasePrice  Float // Último precio de compra
-  priceNormal    Float
-  priceCamino    Float
-  priceEspecial  Float
-  priceMayorista Float?
+  purchasePrice        Float // Último precio de compra
+  priceNormal          Float
+  priceCamino          Float
+  priceEspecial        Float
+  priceMayorista       Float?
+  minQuantityWholesale Int?
 
   // Porcentajes de ganancia (referenciales)
   markupNormal    Float @default(10)

@@ -1,9 +1,16 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID, IsArray, ValidateNested, IsBoolean, IsEnum } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsArray,
+  ValidateNested,
+  IsBoolean,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { PurchaseDetailDto } from './purchase-detail.dto';
 
 export class CreatePurchaseDto {
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
   providerId: string;
 
@@ -18,5 +25,5 @@ export class CreatePurchaseDto {
 
   @IsOptional()
   @IsBoolean()
-  updatePrices?: boolean; // Si es true, recalcula precios de venta
+  updatePrices?: boolean;
 }
