@@ -178,3 +178,48 @@ enum PurchaseStatus {
   RECEIVED
   CANCELLED
 }
+
+model Sale {
+  id            String      @id @default(cuid())
+  saleNumber    String      @unique  // Ej: 12-07-001
+  clientId      String
+  client        Client      @relation(fields: [clientId], references: [id])
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  date          DateTime    @default(now())
+  status        SaleStatus  @default(PENDING)
+  paymentStatus PaymentStatus @default(PENDING) // PENDING, PARTIALLY_PAID, PAID
+  total         Float
+  discount      Float       @default(0)
+  observations  String?
+  pdfUrl        String?     // Ruta del PDF generado
+  //details       SaleDetail[]
+  //payments      Payment[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model SaleDetail {
+  id          String   @id @default(cuid())
+  saleId      String
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Float
+  unitPrice   Float    // Precio de venta en ese momento (puede ser editado)
+  subtotal    Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum SaleStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING      // Por cobrar
+  PARTIALLY_PAID
+  PAID
+}
