@@ -57,3 +57,17 @@ enum ClientType {
   ESPECIAL
   CAMINO
 }
+
+model Provider {
+  id          String   @id @default(cuid())
+  companyName String   @unique // Nombre de la empresa (ej: "Molino Andino")
+  contactName String?  // Persona responsable (ej: "Juan Carlos Apolo")
+  phone       String?
+  email       String?
+  //products    Product[] // Un proveedor puede tener muchos productos
+  //purchases   Purchase[] // Un proveedor puede tener muchas compras
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("providers")
+}
