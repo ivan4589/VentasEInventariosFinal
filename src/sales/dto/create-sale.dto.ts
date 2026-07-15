@@ -1,10 +1,19 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID, IsArray, ValidateNested, IsEnum, IsNumber } from 'class-validator';
+import {
+  IsArray,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
+import { $Enums } from '../../../generated/prisma/client';
 import { SaleDetailDto } from './sale-detail.dto';
-import { PaymentStatus } from '@prisma/client';
 
 export class CreateSaleDto {
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
   clientId: string;
 
@@ -15,13 +24,15 @@ export class CreateSaleDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(0)
+  @Type(() => Number)
   discount?: number;
 
   @IsOptional()
   @IsString()
   observations?: string;
 
-  @IsEnum(PaymentStatus)
+  @IsEnum($Enums.PaymentStatus)
   @IsNotEmpty()
-  paymentStatus: PaymentStatus; // PAID o PENDING (por cobrar)
+  paymentStatus: $Enums.PaymentStatus;
 }

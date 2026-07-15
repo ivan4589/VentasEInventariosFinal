@@ -1,14 +1,17 @@
-import { IsUUID, IsNumber, IsPositive } from 'class-validator';
+import { IsNumber, IsPositive, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class SaleDetailDto {
-  @IsUUID()
+  @IsString()
   productId: string;
 
   @IsNumber()
   @IsPositive()
+  @Type(() => Number)
   quantity: number;
 
   @IsNumber()
   @IsPositive()
-  unitPrice: number; // Precio al momento de la venta
+  @Type(() => Number)
+  unitPrice: number;
 }

@@ -1,4 +1,4 @@
-import { SaleStatus, PaymentStatus } from '@prisma/client';
+import { $Enums } from '../../../generated/prisma/client';
 
 export class SaleDetailResponseDto {
   id: string;
@@ -14,11 +14,11 @@ export class SaleResponseDto {
   saleNumber: string;
   clientId: string;
   clientName: string;
-  userId: string;
+  userId: number;
   userName: string;
   date: Date;
-  status: SaleStatus;
-  paymentStatus: PaymentStatus;
+  status: $Enums.SaleStatus;
+  paymentStatus: $Enums.PaymentStatus;
   total: number;
   discount: number;
   observations?: string;
@@ -26,4 +26,10 @@ export class SaleResponseDto {
   details: SaleDetailResponseDto[];
   createdAt: Date;
   updatedAt: Date;
+  lowStockAlerts?: {
+    productId: string;
+    productName: string;
+    currentStock: number;
+    minStock: number;
+  }[];
 }
