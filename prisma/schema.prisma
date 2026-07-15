@@ -95,34 +95,83 @@ model SubCategory {
   @@map("sub_categories")
 }
 
+// ====== MODELOS EXISTENTES (actualizados) ======
 model Product {
-  id                   String       @id @default(cuid())
-  name                 String
-  description          String?
-  providerId           String
-  provider             Provider     @relation(fields: [providerId], references: [id])
-  categoryId           String
-  category             Category     @relation(fields: [categoryId], references: [id])
-  subCategoryId        String?
-  subCategory          SubCategory? @relation(fields: [subCategoryId], references: [id])
-  weight               String? // Ej: "1KL", "500g", etc.
-  purchasePrice        Float // Precio de compra
-  priceNormal          Float // Precio para clientes NORMAL
-  priceCamino          Float // Precio para clientes CAMINO
-  priceEspecial        Float // Precio para clientes ESPECIAL
-  priceMayorista       Float? // Precio por mayor (opcional)
-  minQuantityWholesale Int? // Cantidad mínima para precio mayorista
-  stock                Float        @default(0)
-  minStock             Float        @default(0)
-  unit                 String       @default("UNIDAD")
-  reserveQuantity      Float        @default(0) // Cantidad reservada para preventas
-  additionalInfo       String?
-  imageUrl             String?
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  providerId  String
+  provider    Provider @relation(fields: [providerId], references: [id])
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  subCategoryId String?
+  subCategory SubCategory? @relation(fields: [subCategoryId], references: [id])
+  weight      String?
+  
+  // Precios
+  purchasePrice Float   // Último precio de compra
+  priceNormal   Float
+  priceCamino   Float
+  priceEspecial Float
+  priceMayorista Float?
+  
+  // Porcentajes de ganancia (referenciales)
+  markupNormal    Float @default(10)
+  markupCamino    Float @default(10)
+  markupEspecial  Float @default(10)
+  markupMayorista Float @default(10)
+  
+  // Stock
+  stock       Float @default(0)
+  minStock    Float @default(0)
+  unit        String @default("UNIDAD")
+  reserveQuantity Float @default(0)
+  additionalInfo String?
+  imageUrl    String?
+  
+  // Relaciones
   //saleDetails SaleDetail[]
   //inventoryMovements InventoryMovement[]
-  //purchaseDetails PurchaseDetail[]
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  purchaseDetails PurchaseDetail[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
 
-  @@map("products")
+model Purchase {
+  id          String   @id @default(cuid())
+  providerId  String
+  provider    Provider @relation(fields: [providerId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  date        DateTime @default(now())
+  status      PurchaseStatus @default(PENDING)
+  total       Float
+  observations String?
+  pdfUrl      String?  // Ruta del PDF generado
+  details     PurchaseDetail[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("purchases")
+}
+
+model PurchaseDetail {
+  id          String   @id @default(cuid())
+  purchaseId  String
+  purchase    Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Float
+  unitPrice   Float    // Precio de compra en ese momento
+  subtotal    Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("purchase_details")
+}
+
+enum PurchaseStatus {
+  PENDING
+  RECEIVED
+  CANCELLED
 }
