@@ -64,7 +64,7 @@ model Provider {
   contactName String? // Persona responsable (ej: "Juan Carlos Apolo")
   phone       String?
   email       String?
-  //products    Product[] // Un proveedor puede tener muchos productos
+  products    Product[] // Un proveedor puede tener muchos productos
   //purchases   Purchase[] // Un proveedor puede tener muchas compras
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -76,7 +76,7 @@ model Category {
   id            String        @id @default(cuid())
   name          String        @unique
   subCategories SubCategory[]
-  //products      Product[]
+  products      Product[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -88,9 +88,41 @@ model SubCategory {
   name       String   @unique
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
-  //products   Product[]
+  products   Product[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@map("sub_categories")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  providerId  String
+  provider    Provider @relation(fields: [providerId], references: [id])
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  subCategoryId String?
+  subCategory SubCategory? @relation(fields: [subCategoryId], references: [id])
+  weight      String?   // Ej: "1KL", "500g", etc.
+  purchasePrice Float   // Precio de compra
+  priceNormal Float     // Precio para clientes NORMAL
+  priceCamino Float     // Precio para clientes CAMINO
+  priceEspecial Float   // Precio para clientes ESPECIAL
+  priceMayorista Float? // Precio por mayor (opcional)
+  minQuantityWholesale Int? // Cantidad mínima para precio mayorista
+  stock       Float    @default(0)
+  minStock    Float    @default(0)
+  unit        String   @default("UNIDAD")
+  reserveQuantity Float @default(0) // Cantidad reservada para preventas
+  additionalInfo String?
+  imageUrl    String?
+  //saleDetails SaleDetail[]
+  //inventoryMovements InventoryMovement[]
+ //purchaseDetails PurchaseDetail[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("products")
 }
