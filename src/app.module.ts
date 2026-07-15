@@ -14,6 +14,8 @@ import { PaymentsModule } from './payments/payments.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ReportsModule } from './reports/reports.module';
 import { ProvidersModule } from './providers/providers.module';
+import { CategoriesModule } from './categories/categories.module';
+import { SubCategoriesModule } from './sub-categories/sub-categories.module';
 
 @Module({
   imports: [
@@ -32,6 +34,8 @@ import { ProvidersModule } from './providers/providers.module';
     InventoryModule,
     ReportsModule,
     ProvidersModule,
+    CategoriesModule,
+    SubCategoriesModule,
   ],
   controllers: [AppController],
 })

@@ -71,3 +71,26 @@ model Provider {
 
   @@map("providers")
 }
+
+model Category {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  subCategories SubCategory[]
+  //products      Product[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("categories")
+}
+
+model SubCategory {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  //products   Product[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("sub_categories")
+}
