@@ -17,6 +17,12 @@ export class DashboardController {
     return this.dashboardService.getKPI(filters);
   }
 
+  @Get('profit-summary')
+  @Roles($Enums.Role.ADMIN)
+  getProfitSummary(@Query() filters: DashboardFiltersDto) {
+    return this.dashboardService.getProfitSummary(filters);
+  }
+
   @Get('sales-trend')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   getSalesTrend(@Query() filters: DashboardFiltersDto) {
@@ -24,7 +30,7 @@ export class DashboardController {
   }
 
   @Get('payment-methods')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   getPaymentMethods(@Query() filters: DashboardFiltersDto) {
     return this.dashboardService.getPaymentMethods(filters);
   }
@@ -47,6 +53,12 @@ export class DashboardController {
     return this.dashboardService.getTopDebtors(filters);
   }
 
+  @Get('debt-alerts')
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  getDebtAlerts(@Query() filters: DashboardFiltersDto) {
+    return this.dashboardService.getDebtAlerts(filters);
+  }
+
   @Get('low-stock')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   getLowStock() {
@@ -57,5 +69,29 @@ export class DashboardController {
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   getLastSales(@Query() filters: DashboardFiltersDto) {
     return this.dashboardService.getLastSales(filters);
+  }
+
+  @Get('pending-purchases')
+  @Roles($Enums.Role.ADMIN)
+  getPendingPurchases() {
+    return this.dashboardService.getPendingPurchases();
+  }
+
+  @Get('purchases-summary')
+  @Roles($Enums.Role.ADMIN)
+  getPurchasesSummary(@Query() filters: DashboardFiltersDto) {
+    return this.dashboardService.getPurchasesSummary(filters);
+  }
+
+  @Get('product-rotation')
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  getProductRotation(@Query() filters: DashboardFiltersDto) {
+    return this.dashboardService.getProductRotation(filters);
+  }
+
+  @Get('sales-by-location')
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  getSalesByLocation(@Query() filters: DashboardFiltersDto) {
+    return this.dashboardService.getSalesByLocation(filters);
   }
 }
