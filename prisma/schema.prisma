@@ -30,6 +30,7 @@ model User {
 
   purchases Purchase[]
   sales     Sale[]
+  payments  Payment[]
 }
 
 model Location {
@@ -52,7 +53,8 @@ model Client {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  sales Sale[]
+  sales    Sale[]
+  payments Payment[]
 
   @@map("clients")
 }
@@ -193,10 +195,8 @@ model Sale {
   observations  String?
   pdfUrl        String?
 
-  status      SaleStatus @default(PENDING) // PENDING, CONFIRMED, PARTIALLY_PAID, PAID, CANCELLED
-  payments    Payment[]
-
-  details SaleDetail[]
+  details  SaleDetail[]
+  payments Payment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -219,33 +219,21 @@ model SaleDetail {
   @@map("sale_details")
 }
 
-enum SaleStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-}
-
-enum PaymentStatus {
-  PENDING // Por cobrar
-  PARTIALLY_PAID
-  PAID
-}
-
 model Payment {
-  id          String   @id @default(cuid())
-  saleId      String
-  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  clientId    String
-  client      Client   @relation(fields: [clientId], references: [id])
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  amount      Float
-  method      PaymentMethod // CASH, QR, BANK_TRANSFER
-  reference   String?  // Número de transacción si es QR o transferencia
-  receivedAt  DateTime @default(now())
+  id           String        @id @default(cuid())
+  saleId       String
+  sale         Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  clientId     String
+  client       Client        @relation(fields: [clientId], references: [id])
+  userId       Int
+  user         User          @relation(fields: [userId], references: [id])
+  amount       Float
+  method       PaymentMethod
+  reference    String?
+  receivedAt   DateTime      @default(now())
   observations String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@map("payments")
 }
@@ -253,9 +241,13 @@ model Payment {
 enum SaleStatus {
   PENDING
   CONFIRMED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
   PARTIALLY_PAID
   PAID
-  CANCELLED
 }
 
 enum PaymentMethod {
