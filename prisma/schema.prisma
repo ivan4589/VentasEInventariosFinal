@@ -28,10 +28,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  purchases Purchase[]
-  sales     Sale[]
-  payments  Payment[]
-  reportHistory ReportHistory[]
+  purchases       Purchase[]
+  sales           Sale[]
+  payments        Payment[]
+  reportHistories ReportHistory[]
 }
 
 model Location {
@@ -258,14 +258,16 @@ enum PaymentMethod {
 }
 
 model ReportHistory {
-  id         String   @id @default(cuid())
+  id         String     @id @default(cuid())
   type       ReportType
   title      String
-  parameters String?  // JSON con filtros usados (ej: { "categoryId": "..." })
-  fileUrl    String   // Ruta donde se guardó el PDF
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  createdAt  DateTime @default(now())
+  parameters String?
+  fileUrl    String
+  userId     Int
+  user       User       @relation(fields: [userId], references: [id])
+  createdAt  DateTime   @default(now())
+
+  @@map("report_histories")
 }
 
 enum ReportType {
