@@ -1,13 +1,20 @@
-import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
+import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
-import { PaymentResponseDto, SalePaymentStatusDto } from './dto/payment-response.dto';
-import { PaymentMethod, SaleStatus } from '@prisma/client';
+import {
+  PaymentResponseDto,
+  SalePaymentStatusDto,
+} from './dto/payment-response.dto';
 
 @Injectable()
 export class PaymentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private toResponse(payment: any): PaymentResponseDto {
     return {
@@ -27,37 +34,72 @@ export class PaymentsService {
     };
   }
 
-  // ====== CREATE PAYMENT ======
-  async create(createPaymentDto: CreatePaymentDto, userId: string): Promise<PaymentResponseDto> {
-    const { saleId, clientId, amount, method, reference, observations } = createPaymentDto;
-
-    // Validar que la venta existe y no está anulada
-    const sale = await this.prisma.sale.findUnique({
-      where: { id: saleId },
-      include: { payments: true },
-    });
-    if (!sale) throw new NotFoundException('Venta no encontrada');
-    if (sale.status === 'CANCELLED') {
-      throw new BadRequestException('No se puede registrar pagos en una venta anulada');
+  private calculatePaymentStatus(
+    saleTotal: number,
+    totalPaid: number,
+  ): $Enums.PaymentStatus {
+    if (totalPaid <= 0) {
+      return $Enums.PaymentStatus.PENDING;
     }
 
-    // Validar que el cliente coincide con el de la venta
+    if (totalPaid >= saleTotal) {
+      return $Enums.PaymentStatus.PAID;
+    }
+
+    return $Enums.PaymentStatus.PARTIALLY_PAID;
+  }
+
+  async create(
+    createPaymentDto: CreatePaymentDto,
+    userId: number,
+  ): Promise<PaymentResponseDto> {
+    const { saleId, clientId, amount, method, reference, observations } =
+      createPaymentDto;
+
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      include: {
+        payments: true,
+        client: true,
+      },
+    });
+
+    if (!sale) {
+      throw new NotFoundException('Venta no encontrada');
+    }
+
+    if (sale.status === $Enums.SaleStatus.CANCELLED) {
+      throw new BadRequestException(
+        'No se puede registrar pagos en una venta anulada',
+      );
+    }
+
+    if (sale.status !== $Enums.SaleStatus.CONFIRMED) {
+      throw new BadRequestException(
+        'Solo se puede registrar pagos en ventas confirmadas',
+      );
+    }
+
     if (sale.clientId !== clientId) {
       throw new BadRequestException('El cliente no coincide con el de la venta');
     }
 
-    // Calcular total pagado hasta ahora
-    const totalPaid = sale.payments.reduce((sum, p) => sum + p.amount, 0) + amount;
-    const balance = sale.total - totalPaid;
+    const alreadyPaid = sale.payments.reduce(
+      (sum, payment) => sum + payment.amount,
+      0,
+    );
 
-    // Validar que no se pague más del total
+    const totalPaid = alreadyPaid + amount;
+
     if (totalPaid > sale.total) {
-      throw new BadRequestException(`El monto total pagado (${totalPaid}) excede el total de la venta (${sale.total})`);
+      throw new BadRequestException(
+        `El monto total pagado (${totalPaid}) excede el total de la venta (${sale.total})`,
+      );
     }
 
-    // Crear el pago en transacción
+    const newPaymentStatus = this.calculatePaymentStatus(sale.total, totalPaid);
+
     return this.prisma.$transaction(async (prisma) => {
-      // 1. Crear el pago
       const payment = await prisma.payment.create({
         data: {
           saleId,
@@ -74,54 +116,66 @@ export class PaymentsService {
         },
       });
 
-      // 2. Actualizar estado de la venta
-      let newStatus: SaleStatus;
-      if (balance <= 0) {
-        newStatus = 'PAID';
-      } else if (totalPaid > 0) {
-        newStatus = 'PARTIALLY_PAID';
-      } else {
-        newStatus = 'CONFIRMED'; // Si no se ha pagado nada, queda como CONFIRMED
-      }
-
       await prisma.sale.update({
         where: { id: saleId },
-        data: { status: newStatus },
+        data: {
+          paymentStatus: newPaymentStatus,
+        },
       });
 
       return this.toResponse(payment);
     });
   }
 
-  // ====== UPDATE PAYMENT ======
-  async update(id: string, updatePaymentDto: UpdatePaymentDto, userId: string): Promise<PaymentResponseDto> {
-    // Obtener el pago existente
+  async update(
+    id: string,
+    updatePaymentDto: UpdatePaymentDto,
+  ): Promise<PaymentResponseDto> {
     const existingPayment = await this.prisma.payment.findUnique({
       where: { id },
-      include: { sale: { include: { payments: true } } },
+      include: {
+        sale: {
+          include: {
+            payments: true,
+          },
+        },
+      },
     });
-    if (!existingPayment) throw new NotFoundException('Pago no encontrado');
+
+    if (!existingPayment) {
+      throw new NotFoundException('Pago no encontrado');
+    }
 
     const sale = existingPayment.sale;
-    if (sale.status === 'CANCELLED') {
-      throw new BadRequestException('No se puede editar pagos en una venta anulada');
+
+    if (sale.status === $Enums.SaleStatus.CANCELLED) {
+      throw new BadRequestException(
+        'No se puede editar pagos en una venta anulada',
+      );
     }
 
-    // Calcular el nuevo total pagado (restando el monto anterior y sumando el nuevo)
-    const oldAmount = existingPayment.amount;
-    const newAmount = updatePaymentDto.amount !== undefined ? updatePaymentDto.amount : oldAmount;
-    const totalPaid = sale.payments.reduce((sum, p) => {
-      if (p.id === id) return sum + newAmount;
-      return sum + p.amount;
+    const newAmount =
+      updatePaymentDto.amount !== undefined
+        ? updatePaymentDto.amount
+        : existingPayment.amount;
+
+    const totalPaid = sale.payments.reduce((sum, payment) => {
+      if (payment.id === id) {
+        return sum + newAmount;
+      }
+
+      return sum + payment.amount;
     }, 0);
-    const balance = sale.total - totalPaid;
 
     if (totalPaid > sale.total) {
-      throw new BadRequestException(`El monto total pagado (${totalPaid}) excede el total de la venta (${sale.total})`);
+      throw new BadRequestException(
+        `El monto total pagado (${totalPaid}) excede el total de la venta (${sale.total})`,
+      );
     }
 
+    const newPaymentStatus = this.calculatePaymentStatus(sale.total, totalPaid);
+
     return this.prisma.$transaction(async (prisma) => {
-      // 1. Actualizar el pago
       const updated = await prisma.payment.update({
         where: { id },
         data: {
@@ -136,73 +190,101 @@ export class PaymentsService {
         },
       });
 
-      // 2. Actualizar estado de la venta
-      let newStatus: SaleStatus;
-      if (balance <= 0) {
-        newStatus = 'PAID';
-      } else if (totalPaid > 0) {
-        newStatus = 'PARTIALLY_PAID';
-      } else {
-        newStatus = 'CONFIRMED';
-      }
-
       await prisma.sale.update({
         where: { id: sale.id },
-        data: { status: newStatus },
+        data: {
+          paymentStatus: newPaymentStatus,
+        },
       });
 
       return this.toResponse(updated);
     });
   }
 
-  // ====== DELETE PAYMENT ======
-  async remove(id: string, userId: string): Promise<void> {
+  async remove(id: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { id },
-      include: { sale: { include: { payments: true } } },
+      include: {
+        sale: {
+          include: {
+            payments: true,
+          },
+        },
+      },
     });
-    if (!payment) throw new NotFoundException('Pago no encontrado');
 
-    const sale = payment.sale;
-    if (sale.status === 'CANCELLED') {
-      throw new BadRequestException('No se puede eliminar pagos en una venta anulada');
+    if (!payment) {
+      throw new NotFoundException('Pago no encontrado');
     }
 
-    return this.prisma.$transaction(async (prisma) => {
-      // 1. Eliminar el pago
-      await prisma.payment.delete({ where: { id } });
+    const sale = payment.sale;
 
-      // 2. Recalcular estado de la venta
-      const remainingPayments = sale.payments.filter(p => p.id !== id);
-      const totalPaid = remainingPayments.reduce((sum, p) => sum + p.amount, 0);
-      const balance = sale.total - totalPaid;
+    if (sale.status === $Enums.SaleStatus.CANCELLED) {
+      throw new BadRequestException(
+        'No se puede eliminar pagos en una venta anulada',
+      );
+    }
 
-      let newStatus: SaleStatus;
-      if (balance <= 0) {
-        newStatus = 'PAID';
-      } else if (totalPaid > 0) {
-        newStatus = 'PARTIALLY_PAID';
-      } else {
-        newStatus = 'CONFIRMED';
-      }
+    const remainingPayments = sale.payments.filter(
+      (currentPayment) => currentPayment.id !== id,
+    );
+
+    const totalPaid = remainingPayments.reduce(
+      (sum, currentPayment) => sum + currentPayment.amount,
+      0,
+    );
+
+    const newPaymentStatus = this.calculatePaymentStatus(sale.total, totalPaid);
+
+    await this.prisma.$transaction(async (prisma) => {
+      await prisma.payment.delete({
+        where: { id },
+      });
 
       await prisma.sale.update({
         where: { id: sale.id },
-        data: { status: newStatus },
+        data: {
+          paymentStatus: newPaymentStatus,
+        },
       });
     });
+
+    return {
+      message: 'Pago eliminado correctamente',
+    };
   }
 
-  // ====== FIND ALL PAYMENTS ======
-  async findAll(filters?: { saleId?: string; clientId?: string; method?: PaymentMethod; dateFrom?: Date; dateTo?: Date }) {
+  async findAll(filters?: {
+    saleId?: string;
+    clientId?: string;
+    method?: $Enums.PaymentMethod;
+    dateFrom?: Date;
+    dateTo?: Date;
+  }): Promise<PaymentResponseDto[]> {
     const where: any = {};
-    if (filters?.saleId) where.saleId = filters.saleId;
-    if (filters?.clientId) where.clientId = filters.clientId;
-    if (filters?.method) where.method = filters.method;
+
+    if (filters?.saleId) {
+      where.saleId = filters.saleId;
+    }
+
+    if (filters?.clientId) {
+      where.clientId = filters.clientId;
+    }
+
+    if (filters?.method) {
+      where.method = filters.method;
+    }
+
     if (filters?.dateFrom || filters?.dateTo) {
       where.receivedAt = {};
-      if (filters.dateFrom) where.receivedAt.gte = filters.dateFrom;
-      if (filters.dateTo) where.receivedAt.lte = filters.dateTo;
+
+      if (filters.dateFrom) {
+        where.receivedAt.gte = filters.dateFrom;
+      }
+
+      if (filters.dateTo) {
+        where.receivedAt.lte = filters.dateTo;
+      }
     }
 
     const payments = await this.prisma.payment.findMany({
@@ -212,13 +294,14 @@ export class PaymentsService {
         user: true,
         sale: true,
       },
-      orderBy: { receivedAt: 'desc' },
+      orderBy: {
+        receivedAt: 'desc',
+      },
     });
 
-    return payments.map(p => this.toResponse(p));
+    return payments.map((payment) => this.toResponse(payment));
   }
 
-  // ====== FIND ONE PAYMENT ======
   async findOne(id: string): Promise<PaymentResponseDto> {
     const payment = await this.prisma.payment.findUnique({
       where: { id },
@@ -228,41 +311,70 @@ export class PaymentsService {
         sale: true,
       },
     });
-    if (!payment) throw new NotFoundException('Pago no encontrado');
+
+    if (!payment) {
+      throw new NotFoundException('Pago no encontrado');
+    }
+
     return this.toResponse(payment);
   }
 
-  // ====== GET SALE PAYMENT STATUS ======
   async getSalePaymentStatus(saleId: string): Promise<SalePaymentStatusDto> {
     const sale = await this.prisma.sale.findUnique({
       where: { id: saleId },
-      include: { payments: true },
+      include: {
+        payments: true,
+      },
     });
-    if (!sale) throw new NotFoundException('Venta no encontrada');
 
-    const totalPaid = sale.payments.reduce((sum, p) => sum + p.amount, 0);
+    if (!sale) {
+      throw new NotFoundException('Venta no encontrada');
+    }
+
+    const totalPaid = sale.payments.reduce(
+      (sum, payment) => sum + payment.amount,
+      0,
+    );
+
     const balance = sale.total - totalPaid;
 
     return {
       saleId: sale.id,
       total: sale.total,
       paid: totalPaid,
-      balance: balance,
-      status: sale.status,
+      balance,
+      saleStatus: sale.status,
+      paymentStatus: sale.paymentStatus,
     };
   }
 
-  // ====== GET CLIENT BALANCE ======
-  async getClientBalance(clientId: string): Promise<{ totalDebt: number; totalPaid: number; balance: number }> {
-    // Obtener todas las ventas del cliente que no estén pagadas o anuladas
+  async getClientBalance(clientId: string): Promise<{
+    totalDebt: number;
+    totalPaid: number;
+    balance: number;
+  }> {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Cliente no encontrado');
+    }
+
     const sales = await this.prisma.sale.findMany({
       where: {
         clientId,
-        status: {
-          in: ['CONFIRMED', 'PARTIALLY_PAID'],
+        status: $Enums.SaleStatus.CONFIRMED,
+        paymentStatus: {
+          in: [
+            $Enums.PaymentStatus.PENDING,
+            $Enums.PaymentStatus.PARTIALLY_PAID,
+          ],
         },
       },
-      include: { payments: true },
+      include: {
+        payments: true,
+      },
     });
 
     let totalDebt = 0;
@@ -270,7 +382,10 @@ export class PaymentsService {
 
     for (const sale of sales) {
       totalDebt += sale.total;
-      totalPaid += sale.payments.reduce((sum, p) => sum + p.amount, 0);
+      totalPaid += sale.payments.reduce(
+        (sum, payment) => sum + payment.amount,
+        0,
+      );
     }
 
     return {
@@ -280,14 +395,27 @@ export class PaymentsService {
     };
   }
 
-  // ====== GET COLLECTION REPORT ======
-  async getCollectionReport(filters?: { dateFrom?: Date; dateTo?: Date; clientId?: string }) {
+  async getCollectionReport(filters?: {
+    dateFrom?: Date;
+    dateTo?: Date;
+    clientId?: string;
+  }) {
     const where: any = {};
-    if (filters?.clientId) where.clientId = filters.clientId;
+
+    if (filters?.clientId) {
+      where.clientId = filters.clientId;
+    }
+
     if (filters?.dateFrom || filters?.dateTo) {
       where.receivedAt = {};
-      if (filters.dateFrom) where.receivedAt.gte = filters.dateFrom;
-      if (filters.dateTo) where.receivedAt.lte = filters.dateTo;
+
+      if (filters.dateFrom) {
+        where.receivedAt.gte = filters.dateFrom;
+      }
+
+      if (filters.dateTo) {
+        where.receivedAt.lte = filters.dateTo;
+      }
     }
 
     const payments = await this.prisma.payment.findMany({
@@ -297,10 +425,11 @@ export class PaymentsService {
         user: true,
         sale: true,
       },
-      orderBy: { receivedAt: 'desc' },
+      orderBy: {
+        receivedAt: 'desc',
+      },
     });
 
-    // Agrupar por método de pago
     const summary = {
       totalCASH: 0,
       totalQR: 0,
@@ -309,15 +438,24 @@ export class PaymentsService {
       count: payments.length,
     };
 
-    for (const p of payments) {
-      summary.total += p.amount;
-      if (p.method === 'CASH') summary.totalCASH += p.amount;
-      else if (p.method === 'QR') summary.totalQR += p.amount;
-      else if (p.method === 'BANK_TRANSFER') summary.totalBANK_TRANSFER += p.amount;
+    for (const payment of payments) {
+      summary.total += payment.amount;
+
+      if (payment.method === $Enums.PaymentMethod.CASH) {
+        summary.totalCASH += payment.amount;
+      }
+
+      if (payment.method === $Enums.PaymentMethod.QR) {
+        summary.totalQR += payment.amount;
+      }
+
+      if (payment.method === $Enums.PaymentMethod.BANK_TRANSFER) {
+        summary.totalBANK_TRANSFER += payment.amount;
+      }
     }
 
     return {
-      payments: payments.map(p => this.toResponse(p)),
+      payments: payments.map((payment) => this.toResponse(payment)),
       summary,
     };
   }

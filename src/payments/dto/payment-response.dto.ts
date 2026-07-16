@@ -1,14 +1,14 @@
-import { PaymentMethod, SaleStatus } from '@prisma/client';
+import { $Enums } from '../../../generated/prisma/client';
 
 export class PaymentResponseDto {
   id: string;
   saleId: string;
   clientId: string;
   clientName: string;
-  userId: string;
+  userId: number;
   userName: string;
   amount: number;
-  method: PaymentMethod;
+  method: $Enums.PaymentMethod;
   reference?: string;
   observations?: string;
   receivedAt: Date;
@@ -21,5 +21,6 @@ export class SalePaymentStatusDto {
   total: number;
   paid: number;
   balance: number;
-  status: SaleStatus;
+  saleStatus: $Enums.SaleStatus;
+  paymentStatus: $Enums.PaymentStatus;
 }

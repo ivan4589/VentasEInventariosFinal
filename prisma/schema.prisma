@@ -31,6 +31,7 @@ model User {
   purchases Purchase[]
   sales     Sale[]
   payments  Payment[]
+  reportHistory ReportHistory[]
 }
 
 model Location {
@@ -254,4 +255,22 @@ enum PaymentMethod {
   CASH
   QR
   BANK_TRANSFER
+}
+
+model ReportHistory {
+  id         String   @id @default(cuid())
+  type       ReportType
+  title      String
+  parameters String?  // JSON con filtros usados (ej: { "categoryId": "..." })
+  fileUrl    String   // Ruta donde se guardó el PDF
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+enum ReportType {
+  INVENTORY_GENERAL
+  INVENTORY_DETAILED
+  SALES_REPORT
+  COLLECTION_REPORT
 }

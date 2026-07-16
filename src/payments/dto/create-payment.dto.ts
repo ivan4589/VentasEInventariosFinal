@@ -1,22 +1,31 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, IsEnum, IsPositive } from 'class-validator';
-import { PaymentMethod } from '@prisma/client';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { $Enums } from '../../../generated/prisma/client';
 
 export class CreatePaymentDto {
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
   saleId: string;
 
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
   clientId: string;
 
   @IsNumber()
   @IsPositive()
+  @Type(() => Number)
   amount: number;
 
-  @IsEnum(PaymentMethod)
+  @IsEnum($Enums.PaymentMethod)
   @IsNotEmpty()
-  method: PaymentMethod;
+  method: $Enums.PaymentMethod;
 
   @IsOptional()
   @IsString()

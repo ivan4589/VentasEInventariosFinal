@@ -1,15 +1,23 @@
-import { IsEnum, IsNumber, IsOptional, IsString, IsUUID, IsPositive } from 'class-validator';
-import { PaymentMethod } from '@prisma/client';
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { $Enums } from '../../../generated/prisma/client';
 
 export class UpdatePaymentDto {
   @IsOptional()
   @IsNumber()
   @IsPositive()
+  @Type(() => Number)
   amount?: number;
 
   @IsOptional()
-  @IsEnum(PaymentMethod)
-  method?: PaymentMethod;
+  @IsEnum($Enums.PaymentMethod)
+  method?: $Enums.PaymentMethod;
 
   @IsOptional()
   @IsString()
