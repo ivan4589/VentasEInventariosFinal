@@ -16,6 +16,7 @@ import { ReportsModule } from './reports/reports.module';
 import { ProvidersModule } from './providers/providers.module';
 import { CategoriesModule } from './categories/categories.module';
 import { SubCategoriesModule } from './sub-categories/sub-categories.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 
 @Module({
@@ -37,6 +38,7 @@ import { SubCategoriesModule } from './sub-categories/sub-categories.module';
     ProvidersModule,
     CategoriesModule,
     SubCategoriesModule,
+    DashboardModule,
   ],
   controllers: [AppController],
 })
