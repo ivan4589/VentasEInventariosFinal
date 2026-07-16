@@ -1,5 +1,5 @@
-import { IsOptional, IsUUID, IsDateString, IsEnum } from 'class-validator';
-import { PaymentMethod, SaleStatus } from '@prisma/client';
+import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import { $Enums } from '../../../generated/prisma/client';
 
 export class ReportFiltersDto {
   @IsOptional()
@@ -11,22 +11,30 @@ export class ReportFiltersDto {
   dateTo?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   clientId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   productId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   locationId?: string;
 
   @IsOptional()
-  @IsEnum(PaymentMethod)
-  paymentMethod?: PaymentMethod;
+  @IsEnum($Enums.PaymentMethod)
+  paymentMethod?: $Enums.PaymentMethod;
 
   @IsOptional()
-  @IsEnum(SaleStatus)
-  status?: SaleStatus;
+  @IsEnum($Enums.SaleStatus)
+  status?: $Enums.SaleStatus;
+
+  @IsOptional()
+  @IsEnum($Enums.PaymentStatus)
+  paymentStatus?: $Enums.PaymentStatus;
+
+  @IsOptional()
+  @IsEnum($Enums.ReportType)
+  type?: $Enums.ReportType;
 }

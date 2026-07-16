@@ -1,87 +1,89 @@
-import { Controller, Get, Post, Query, UseGuards, Request, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+  Request,
+  Param,
+} from '@nestjs/common';
+import { $Enums } from '../../generated/prisma/client';
 import { ReportsService } from './reports.service';
 import { ReportHistoryService } from './report-history.service';
 import { ReportFiltersDto } from './dto/report-filters.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { Role } from '@prisma/client';
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ReportsController {
   constructor(
-    private reportsService: ReportsService,
-    private reportHistoryService: ReportHistoryService,
+    private readonly reportsService: ReportsService,
+    private readonly reportHistoryService: ReportHistoryService,
   ) {}
 
-  // ========== 1. INVENTARIO GENERAL ==========
   @Get('inventory')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
-  async getInventory() {
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  getInventory() {
     return this.reportsService.getInventoryGeneral();
   }
 
   @Post('inventory/pdf')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
-  async generateInventoryPDF(@Request() req) {
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  generateInventoryPDF(@Request() req) {
     return this.reportsService.generateInventoryPDF(req.user.id);
   }
 
-  // ========== 2. VENTAS POR FECHA ==========
   @Get('sales')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
-  async getSales(@Query() filters: ReportFiltersDto) {
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  getSales(@Query() filters: ReportFiltersDto) {
     return this.reportsService.getSalesByDate(filters);
   }
 
   @Post('sales/pdf')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
-  async generateSalesPDF(@Query() filters: ReportFiltersDto, @Request() req) {
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  generateSalesPDF(@Query() filters: ReportFiltersDto, @Request() req) {
     return this.reportsService.generateSalesPDF(filters, req.user.id);
   }
 
-  // ========== 3. RESUMEN DE VENTAS ==========
   @Get('sales-summary')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
-  async getSalesSummary(@Query() filters: ReportFiltersDto) {
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  getSalesSummary(@Query() filters: ReportFiltersDto) {
     return this.reportsService.getSalesSummary(filters);
   }
 
   @Post('sales-summary/pdf')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
-  async generateSalesSummaryPDF(@Query() filters: ReportFiltersDto, @Request() req) {
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  generateSalesSummaryPDF(@Query() filters: ReportFiltersDto, @Request() req) {
     return this.reportsService.generateSalesSummaryPDF(filters, req.user.id);
   }
 
-  // ========== 4. COBRANZA ==========
   @Get('collection')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
-  async getCollection(@Query() filters: ReportFiltersDto) {
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  getCollection(@Query() filters: ReportFiltersDto) {
     return this.reportsService.getCollectionReport(filters);
   }
 
   @Post('collection/pdf')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
-  async generateCollectionPDF(@Query() filters: ReportFiltersDto, @Request() req) {
+  @Roles($Enums.Role.ADMIN, $Enums.Role.COBRADOR)
+  generateCollectionPDF(@Query() filters: ReportFiltersDto, @Request() req) {
     return this.reportsService.generateCollectionPDF(filters, req.user.id);
   }
 
-  // ========== HISTORIAL ==========
   @Get('history')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
-  async getHistory(@Query() filters: { type?: string; dateFrom?: string; dateTo?: string }) {
-    const { type, dateFrom, dateTo } = filters;
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  getHistory(@Query() filters: ReportFiltersDto) {
     return this.reportHistoryService.findAll({
-      type: type as any,
-      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
-      dateTo: dateTo ? new Date(dateTo) : undefined,
+      type: filters.type,
+      dateFrom: filters.dateFrom ? new Date(filters.dateFrom) : undefined,
+      dateTo: filters.dateTo ? new Date(filters.dateTo) : undefined,
     });
   }
 
   @Get('history/:id')
-  @Roles(Role.ADMIN, Role.VENDEDOR)
-  async getHistoryItem(@Param('id') id: string) {
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  getHistoryItem(@Param('id') id: string) {
     return this.reportHistoryService.findOne(id);
   }
 }

@@ -16,7 +16,7 @@ import { ReportsModule } from './reports/reports.module';
 import { ProvidersModule } from './providers/providers.module';
 import { CategoriesModule } from './categories/categories.module';
 import { SubCategoriesModule } from './sub-categories/sub-categories.module';
-import { ReportHistoryService } from './report-history/report-history.service';
+
 
 @Module({
   imports: [
@@ -39,6 +39,5 @@ import { ReportHistoryService } from './report-history/report-history.service';
     SubCategoriesModule,
   ],
   controllers: [AppController],
-  providers: [ReportHistoryService],
 })
 export class AppModule {}

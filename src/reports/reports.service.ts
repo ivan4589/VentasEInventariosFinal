@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportHistoryService } from './report-history.service';
 import { ReportFiltersDto } from './dto/report-filters.dto';
@@ -9,279 +10,505 @@ import * as fs from 'fs';
 @Injectable()
 export class ReportsService {
   constructor(
-    private prisma: PrismaService,
-    private reportHistoryService: ReportHistoryService,
+    private readonly prisma: PrismaService,
+    private readonly reportHistoryService: ReportHistoryService,
   ) {}
 
-  // ============================================================
-  // 1. REPORTE: INVENTARIO GENERAL
-  // ============================================================
-  async getInventoryGeneral() {
-    const products = await this.prisma.product.findMany({
-      where: { stock: { gt: 0 } },
-      include: { category: true },
-      orderBy: { category: { name: 'asc' } },
+  async generatePurchasePDF(purchaseId: string): Promise<string> {
+    const purchase = await this.prisma.purchase.findUnique({
+      where: { id: purchaseId },
+      include: {
+        provider: true,
+        user: true,
+        details: {
+          include: {
+            product: {
+              include: {
+                category: true,
+              },
+            },
+          },
+        },
+      },
     });
 
-    const grouped: Record<string, { category: string; products: any[]; subtotal: number }> = {};
-    let grandTotal = 0;
-
-    for (const product of products) {
-      const catName = product.category?.name || 'Sin categoría';
-      if (!grouped[catName]) {
-        grouped[catName] = { category: catName, products: [], subtotal: 0 };
-      }
-      const value = product.stock * product.purchasePrice;
-      grouped[catName].products.push({
-        name: product.name,
-        stock: product.stock,
-        unitPrice: product.purchasePrice,
-        totalValue: value,
-      });
-      grouped[catName].subtotal += value;
-      grandTotal += value;
+    if (!purchase) {
+      throw new NotFoundException('Compra no encontrada');
     }
 
+    let rows = '';
+
+    for (const detail of purchase.details) {
+      rows += `
+        <tr>
+          <td>${detail.product.name}</td>
+          <td>${detail.product.category?.name || '-'}</td>
+          <td style="text-align:center;">${detail.quantity}</td>
+          <td style="text-align:right;">${detail.unitPrice.toFixed(2)}</td>
+          <td style="text-align:right;">${detail.subtotal.toFixed(2)}</td>
+        </tr>
+      `;
+    }
+
+    const html = this.buildDocumentHTML(
+      'COMPROBANTE DE COMPRA',
+      `
+        <p><strong>Proveedor:</strong> ${purchase.provider.companyName}</p>
+        <p><strong>Registrado por:</strong> ${purchase.user.name}</p>
+        <p><strong>Fecha:</strong> ${new Date(purchase.date).toLocaleString('es-BO')}</p>
+        ${
+          purchase.observations
+            ? `<p><strong>Observaciones:</strong> ${purchase.observations}</p>`
+            : ''
+        }
+      `,
+      `
+        <table>
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Categoría</th>
+              <th>Cantidad</th>
+              <th>Precio Unit.</th>
+              <th>Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="total">TOTAL: ${purchase.total.toFixed(2)} Bs.</div>
+      `,
+    );
+
+    return this.generatePDF(
+      html,
+      `compra-${purchase.id}-${new Date().toISOString().slice(0, 10)}`,
+      'purchases',
+    );
+  }
+
+  async generateSalePDF(saleId: string): Promise<string> {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      include: {
+        client: {
+          include: {
+            location: true,
+          },
+        },
+        user: true,
+        details: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    if (!sale) {
+      throw new NotFoundException('Venta no encontrada');
+    }
+
+    let rows = '';
+
+    for (const detail of sale.details) {
+      rows += `
+        <tr>
+          <td>${detail.product.name}</td>
+          <td style="text-align:center;">${detail.quantity}</td>
+          <td style="text-align:right;">${detail.unitPrice.toFixed(2)}</td>
+          <td style="text-align:right;">${detail.subtotal.toFixed(2)}</td>
+        </tr>
+      `;
+    }
+
+    const html = this.buildDocumentHTML(
+      'NOTA DE VENTA',
+      `
+        <p><strong>N° Venta:</strong> ${sale.saleNumber}</p>
+        <p><strong>Cliente:</strong> ${sale.client.fullName}</p>
+        <p><strong>Localidad:</strong> ${sale.client.location?.name || '-'}</p>
+        <p><strong>Atendido por:</strong> ${sale.user.name}</p>
+        <p><strong>Fecha:</strong> ${new Date(sale.date).toLocaleString('es-BO')}</p>
+      `,
+      `
+        <table>
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Cantidad</th>
+              <th>Precio Unit.</th>
+              <th>Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <p style="text-align:right;"><strong>Descuento:</strong> ${sale.discount.toFixed(2)} Bs.</p>
+        <div class="total">TOTAL: ${sale.total.toFixed(2)} Bs.</div>
+      `,
+    );
+
+    return this.generatePDF(html, `venta-${sale.saleNumber}`, 'sales');
+  }
+
+  async getInventoryGeneral() {
+    const products = await this.prisma.product.findMany({
+      include: {
+        category: true,
+        provider: true,
+      },
+      orderBy: [
+        {
+          category: {
+            name: 'asc',
+          },
+        },
+        {
+          name: 'asc',
+        },
+      ],
+    });
+
+    const items = products.map((product) => ({
+      productId: product.id,
+      name: product.name,
+      category: product.category?.name || 'Sin categoría',
+      provider: product.provider?.companyName || '-',
+      stock: product.stock,
+      minStock: product.minStock,
+      unit: product.unit,
+      purchasePrice: product.purchasePrice,
+      totalValue: product.stock * product.purchasePrice,
+      isLowStock: product.stock <= product.minStock && product.minStock > 0,
+    }));
+
     return {
-      grouped,
-      grandTotal,
+      items,
+      totalProducts: items.length,
+      totalStock: items.reduce((sum, item) => sum + item.stock, 0),
+      totalValue: items.reduce((sum, item) => sum + item.totalValue, 0),
+      lowStockProducts: items.filter((item) => item.isLowStock).length,
       generatedAt: new Date(),
     };
   }
 
-  async generateInventoryPDF(userId: string): Promise<{ pdfUrl: string; historyId: string }> {
+  async generateInventoryPDF(
+    userId: number,
+  ): Promise<{ pdfUrl: string; historyId: string }> {
     const data = await this.getInventoryGeneral();
-    const html = this.buildInventoryHTML(data);
-    const pdfUrl = await this.generatePDF(html, `inventario-general-${new Date().toISOString().slice(0,10)}`);
-    
+
+    let rows = '';
+
+    for (const item of data.items) {
+      rows += `
+        <tr style="${item.isLowStock ? 'background:#fff3cd;' : ''}">
+          <td>${item.name}</td>
+          <td>${item.category}</td>
+          <td>${item.provider}</td>
+          <td style="text-align:center;">${item.stock}</td>
+          <td style="text-align:center;">${item.unit}</td>
+          <td style="text-align:right;">${item.purchasePrice.toFixed(2)}</td>
+          <td style="text-align:right;">${item.totalValue.toFixed(2)}</td>
+        </tr>
+      `;
+    }
+
+    const html = this.buildDocumentHTML(
+      'REPORTE DE INVENTARIO',
+      `
+        <p><strong>Total productos:</strong> ${data.totalProducts}</p>
+        <p><strong>Stock total:</strong> ${data.totalStock}</p>
+        <p><strong>Productos con stock bajo:</strong> ${data.lowStockProducts}</p>
+        <p><strong>Valor total:</strong> ${data.totalValue.toFixed(2)} Bs.</p>
+      `,
+      `
+        <table>
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Categoría</th>
+              <th>Proveedor</th>
+              <th>Stock</th>
+              <th>Unidad</th>
+              <th>Costo</th>
+              <th>Valor</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `,
+    );
+
+    const pdfUrl = await this.generatePDF(
+      html,
+      `inventario-general-${new Date().toISOString().slice(0, 10)}`,
+      'reports',
+    );
+
     const history = await this.reportHistoryService.create({
-      type: 'INVENTORY_GENERAL',
+      type: $Enums.ReportType.INVENTORY_GENERAL,
       title: 'Inventario General',
       filters: {},
       pdfUrl,
       userId,
     });
 
-    return { pdfUrl, historyId: history.id };
+    return {
+      pdfUrl,
+      historyId: history.id,
+    };
   }
 
-  // ============================================================
-  // 2. REPORTE: VENTAS POR FECHA (TODAS LAS VENTAS CONFIRMADAS)
-  // ============================================================
   async getSalesByDate(filters: ReportFiltersDto) {
-    const { dateFrom, dateTo, clientId, productId, locationId } = filters;
-
     const where: any = {
-      status: { in: ['CONFIRMED', 'PARTIALLY_PAID', 'PAID'] },
+      status: $Enums.SaleStatus.CONFIRMED,
     };
-    if (dateFrom) where.date = { gte: new Date(dateFrom) };
-    if (dateTo) where.date = { ...where.date, lte: new Date(dateTo) };
-    if (clientId) where.clientId = clientId;
-    if (locationId) where.client = { locationId };
-    if (productId) {
-      where.details = { some: { productId } };
+
+    if (filters.dateFrom || filters.dateTo) {
+      where.date = {};
+
+      if (filters.dateFrom) {
+        where.date.gte = new Date(filters.dateFrom);
+      }
+
+      if (filters.dateTo) {
+        where.date.lte = new Date(filters.dateTo);
+      }
+    }
+
+    if (filters.clientId) {
+      where.clientId = filters.clientId;
+    }
+
+    if (filters.locationId) {
+      where.client = {
+        locationId: filters.locationId,
+      };
+    }
+
+    if (filters.productId) {
+      where.details = {
+        some: {
+          productId: filters.productId,
+        },
+      };
+    }
+
+    if (filters.paymentStatus) {
+      where.paymentStatus = filters.paymentStatus;
     }
 
     const sales = await this.prisma.sale.findMany({
       where,
       include: {
-        client: true,
+        client: {
+          include: {
+            location: true,
+          },
+        },
+        user: true,
         details: {
-          include: { product: true },
+          include: {
+            product: true,
+          },
         },
         payments: true,
       },
-      orderBy: { client: { fullName: 'asc' } },
+      orderBy: {
+        date: 'desc',
+      },
     });
 
-    // Construir matriz de clientes vs productos
-    const clientMap = new Map();
-    const productSet = new Set();
-
-    for (const sale of sales) {
-      const clientIdKey = sale.clientId;
-      if (!clientMap.has(clientIdKey)) {
-        clientMap.set(clientIdKey, {
-          clientName: sale.client.fullName,
-          products: {},
-          total: 0,
-          paymentMethods: [],
-        });
-      }
-      const clientData = clientMap.get(clientIdKey);
-      clientData.total += sale.total;
-
-      // Si tiene pagos, registrar métodos
-      if (sale.payments.length > 0) {
-        for (const payment of sale.payments) {
-          clientData.paymentMethods.push(payment.method);
-        }
-      } else {
-        clientData.paymentMethods.push('PENDIENTE');
-      }
-
-      for (const detail of sale.details) {
-        const prodName = detail.product.name;
-        productSet.add(prodName);
-        if (!clientData.products[prodName]) {
-          clientData.products[prodName] = 0;
-        }
-        clientData.products[prodName] += detail.quantity;
-      }
-    }
-
-    const productList = Array.from(productSet).sort();
-    const rows = Array.from(clientMap.entries()).map(([clientId, data]) => ({
-      clientId,
-      clientName: data.clientName,
-      ...data.products,
-      total: data.total,
-      paymentMethods: data.paymentMethods.join(', '),
-    }));
-
     return {
-      headers: ['Cliente', ...productList, 'Total', 'Método de Pago'],
-      rows,
-      productList,
+      sales,
+      totalSales: sales.length,
+      totalAmount: sales.reduce((sum, sale) => sum + sale.total, 0),
+      totalPaid: sales.reduce(
+        (sum, sale) =>
+          sum + sale.payments.reduce((pSum, payment) => pSum + payment.amount, 0),
+        0,
+      ),
       generatedAt: new Date(),
     };
   }
 
-  async generateSalesPDF(filters: ReportFiltersDto, userId: string): Promise<{ pdfUrl: string; historyId: string }> {
+  async generateSalesPDF(
+    filters: ReportFiltersDto,
+    userId: number,
+  ): Promise<{ pdfUrl: string; historyId: string }> {
     const data = await this.getSalesByDate(filters);
-    const html = this.buildSalesHTML(data, 'VENTAS POR FECHA');
-    const pdfUrl = await this.generatePDF(html, `ventas-${new Date().toISOString().slice(0,10)}`);
-    
+
+    let rows = '';
+
+    for (const sale of data.sales) {
+      rows += `
+        <tr>
+          <td>${sale.saleNumber}</td>
+          <td>${sale.client.fullName}</td>
+          <td>${sale.client.location?.name || '-'}</td>
+          <td>${new Date(sale.date).toLocaleDateString('es-BO')}</td>
+          <td>${sale.paymentStatus}</td>
+          <td style="text-align:right;">${sale.total.toFixed(2)}</td>
+        </tr>
+      `;
+    }
+
+    const html = this.buildDocumentHTML(
+      'REPORTE DE VENTAS',
+      `
+        <p><strong>Total ventas:</strong> ${data.totalSales}</p>
+        <p><strong>Monto total:</strong> ${data.totalAmount.toFixed(2)} Bs.</p>
+        <p><strong>Total cobrado:</strong> ${data.totalPaid.toFixed(2)} Bs.</p>
+      `,
+      `
+        <table>
+          <thead>
+            <tr>
+              <th>N° Venta</th>
+              <th>Cliente</th>
+              <th>Localidad</th>
+              <th>Fecha</th>
+              <th>Pago</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `,
+    );
+
+    const pdfUrl = await this.generatePDF(
+      html,
+      `ventas-${new Date().toISOString().slice(0, 10)}`,
+      'reports',
+    );
+
     const history = await this.reportHistoryService.create({
-      type: 'SALES_BY_DATE',
-      title: 'Ventas por Fecha',
+      type: $Enums.ReportType.SALES_REPORT,
+      title: 'Reporte de Ventas',
       filters,
       pdfUrl,
       userId,
     });
 
-    return { pdfUrl, historyId: history.id };
+    return {
+      pdfUrl,
+      historyId: history.id,
+    };
   }
 
-  // ============================================================
-  // 3. REPORTE: RESUMEN DE VENTAS (SOLO CLIENTES CON DEUDA)
-  // ============================================================
   async getSalesSummary(filters: ReportFiltersDto) {
-    // Reutilizamos la lógica de ventas pero filtramos por estados PENDING y PARTIALLY_PAID
-    const { dateFrom, dateTo, clientId, locationId } = filters;
-
-    const where: any = {
-      status: { in: ['PENDING', 'PARTIALLY_PAID'] },
-    };
-    if (dateFrom) where.date = { gte: new Date(dateFrom) };
-    if (dateTo) where.date = { ...where.date, lte: new Date(dateTo) };
-    if (clientId) where.clientId = clientId;
-    if (locationId) where.client = { locationId };
-
-    const sales = await this.prisma.sale.findMany({
-      where,
-      include: {
-        client: true,
-        details: {
-          include: { product: true },
-        },
-        payments: true,
-      },
-      orderBy: { client: { fullName: 'asc' } },
+    const data = await this.getSalesByDate({
+      ...filters,
+      paymentStatus: filters.paymentStatus,
     });
 
-    // Construir matriz similar al reporte 2
-    const clientMap = new Map();
-    const productSet = new Set();
+    const totalDebt = data.sales.reduce((sum, sale) => {
+      const paid = sale.payments.reduce(
+        (pSum, payment) => pSum + payment.amount,
+        0,
+      );
 
-    for (const sale of sales) {
-      const clientIdKey = sale.clientId;
-      if (!clientMap.has(clientIdKey)) {
-        clientMap.set(clientIdKey, {
-          clientName: sale.client.fullName,
-          products: {},
-          total: 0,
-          pending: sale.total, // Inicialmente el total es lo que debe
-          paymentMethods: [],
-        });
+      return sum + (sale.total - paid);
+    }, 0);
+
+    return {
+      ...data,
+      totalDebt,
+    };
+  }
+
+  async generateSalesSummaryPDF(
+    filters: ReportFiltersDto,
+    userId: number,
+  ): Promise<{ pdfUrl: string; historyId: string }> {
+    const data = await this.getSalesSummary(filters);
+
+    let rows = '';
+
+    for (const sale of data.sales) {
+      const paid = sale.payments.reduce(
+        (sum, payment) => sum + payment.amount,
+        0,
+      );
+
+      const debt = sale.total - paid;
+
+      rows += `
+        <tr>
+          <td>${sale.saleNumber}</td>
+          <td>${sale.client.fullName}</td>
+          <td style="text-align:right;">${sale.total.toFixed(2)}</td>
+          <td style="text-align:right;">${paid.toFixed(2)}</td>
+          <td style="text-align:right;">${debt.toFixed(2)}</td>
+        </tr>
+      `;
+    }
+
+    const html = this.buildDocumentHTML(
+      'RESUMEN DE VENTAS',
+      `
+        <p><strong>Total ventas:</strong> ${data.totalSales}</p>
+        <p><strong>Total vendido:</strong> ${data.totalAmount.toFixed(2)} Bs.</p>
+        <p><strong>Saldo pendiente:</strong> ${data.totalDebt.toFixed(2)} Bs.</p>
+      `,
+      `
+        <table>
+          <thead>
+            <tr>
+              <th>N° Venta</th>
+              <th>Cliente</th>
+              <th>Total</th>
+              <th>Pagado</th>
+              <th>Saldo</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `,
+    );
+
+    const pdfUrl = await this.generatePDF(
+      html,
+      `resumen-ventas-${new Date().toISOString().slice(0, 10)}`,
+      'reports',
+    );
+
+    const history = await this.reportHistoryService.create({
+      type: $Enums.ReportType.SALES_REPORT,
+      title: 'Resumen de Ventas',
+      filters,
+      pdfUrl,
+      userId,
+    });
+
+    return {
+      pdfUrl,
+      historyId: history.id,
+    };
+  }
+
+  async getCollectionReport(filters: ReportFiltersDto) {
+    const where: any = {};
+
+    if (filters.dateFrom || filters.dateTo) {
+      where.receivedAt = {};
+
+      if (filters.dateFrom) {
+        where.receivedAt.gte = new Date(filters.dateFrom);
       }
-      const clientData = clientMap.get(clientIdKey);
-      clientData.total += sale.total;
 
-      // Calcular cuánto ha pagado
-      const totalPaid = sale.payments.reduce((sum, p) => sum + p.amount, 0);
-      clientData.pending = sale.total - totalPaid;
-
-      if (sale.payments.length > 0) {
-        for (const payment of sale.payments) {
-          clientData.paymentMethods.push(payment.method);
-        }
-      } else {
-        clientData.paymentMethods.push('PENDIENTE');
-      }
-
-      for (const detail of sale.details) {
-        const prodName = detail.product.name;
-        productSet.add(prodName);
-        if (!clientData.products[prodName]) {
-          clientData.products[prodName] = 0;
-        }
-        clientData.products[prodName] += detail.quantity;
+      if (filters.dateTo) {
+        where.receivedAt.lte = new Date(filters.dateTo);
       }
     }
 
-    const productList = Array.from(productSet).sort();
-    const rows = Array.from(clientMap.entries()).map(([clientId, data]) => ({
-      clientId,
-      clientName: data.clientName,
-      ...data.products,
-      total: data.total,
-      pending: data.pending,
-      paymentMethods: data.paymentMethods.join(', '),
-    }));
+    if (filters.clientId) {
+      where.clientId = filters.clientId;
+    }
 
-    // Calcular sumas generales
-    const totals = {
-      totalGeneral: rows.reduce((sum, r) => sum + r.total, 0),
-      totalPending: rows.reduce((sum, r) => sum + r.pending, 0),
-    };
-
-    return {
-      headers: ['Cliente', ...productList, 'Total', 'Saldo Pendiente', 'Método de Pago'],
-      rows,
-      productList,
-      totals,
-      generatedAt: new Date(),
-    };
-  }
-
-  async generateSalesSummaryPDF(filters: ReportFiltersDto, userId: string): Promise<{ pdfUrl: string; historyId: string }> {
-    const data = await this.getSalesSummary(filters);
-    const html = this.buildSalesSummaryHTML(data);
-    const pdfUrl = await this.generatePDF(html, `resumen-ventas-${new Date().toISOString().slice(0,10)}`);
-    
-    const history = await this.reportHistoryService.create({
-      type: 'SALES_SUMMARY',
-      title: 'Resumen de Ventas (Clientes con Deuda)',
-      filters,
-      pdfUrl,
-      userId,
-    });
-
-    return { pdfUrl, historyId: history.id };
-  }
-
-  // ============================================================
-  // 4. REPORTE: COBRANZA
-  // ============================================================
-  async getCollectionReport(filters: ReportFiltersDto) {
-    const { dateFrom, dateTo, clientId, paymentMethod, status } = filters;
-
-    const where: any = {};
-    if (dateFrom) where.receivedAt = { gte: new Date(dateFrom) };
-    if (dateTo) where.receivedAt = { ...where.receivedAt, lte: new Date(dateTo) };
-    if (clientId) where.clientId = clientId;
-    if (paymentMethod) where.method = paymentMethod;
+    if (filters.paymentMethod) {
+      where.method = filters.paymentMethod;
+    }
 
     const payments = await this.prisma.payment.findMany({
       where,
@@ -290,317 +517,234 @@ export class ReportsService {
         sale: true,
         user: true,
       },
-      orderBy: { receivedAt: 'desc' },
+      orderBy: {
+        receivedAt: 'desc',
+      },
     });
 
-    // Filtrar por estado de la venta si se especifica
-    let filtered = payments;
-    if (status) {
-      filtered = payments.filter(p => p.sale.status === status);
-    }
-
-    const rows = filtered.map(p => ({
-      clientName: p.client.fullName,
-      paymentDate: p.receivedAt,
-      method: p.method,
-      amount: p.amount,
-      saleTotal: p.sale.total,
-      pending: p.sale.total - p.amount,
-      status: p.sale.status,
-    }));
-
-    const totalCobrado = filtered.reduce((sum, p) => sum + p.amount, 0);
-
     return {
-      rows,
-      totalCobrado,
+      payments,
+      totalCollected: payments.reduce((sum, payment) => sum + payment.amount, 0),
+      totalCash: payments
+        .filter((payment) => payment.method === $Enums.PaymentMethod.CASH)
+        .reduce((sum, payment) => sum + payment.amount, 0),
+      totalQr: payments
+        .filter((payment) => payment.method === $Enums.PaymentMethod.QR)
+        .reduce((sum, payment) => sum + payment.amount, 0),
+      totalBankTransfer: payments
+        .filter(
+          (payment) => payment.method === $Enums.PaymentMethod.BANK_TRANSFER,
+        )
+        .reduce((sum, payment) => sum + payment.amount, 0),
       generatedAt: new Date(),
     };
   }
 
-  async generateCollectionPDF(filters: ReportFiltersDto, userId: string): Promise<{ pdfUrl: string; historyId: string }> {
+  async generateCollectionPDF(
+    filters: ReportFiltersDto,
+    userId: number,
+  ): Promise<{ pdfUrl: string; historyId: string }> {
     const data = await this.getCollectionReport(filters);
-    const html = this.buildCollectionHTML(data);
-    const pdfUrl = await this.generatePDF(html, `cobranza-${new Date().toISOString().slice(0,10)}`);
-    
+
+    let rows = '';
+
+    for (const payment of data.payments) {
+      rows += `
+        <tr>
+          <td>${payment.client.fullName}</td>
+          <td>${payment.sale.saleNumber}</td>
+          <td>${new Date(payment.receivedAt).toLocaleDateString('es-BO')}</td>
+          <td>${payment.method}</td>
+          <td style="text-align:right;">${payment.amount.toFixed(2)}</td>
+          <td>${payment.user.name}</td>
+        </tr>
+      `;
+    }
+
+    const html = this.buildDocumentHTML(
+      'REPORTE DE COBRANZA',
+      `
+        <p><strong>Total cobrado:</strong> ${data.totalCollected.toFixed(2)} Bs.</p>
+        <p><strong>Efectivo:</strong> ${data.totalCash.toFixed(2)} Bs.</p>
+        <p><strong>QR:</strong> ${data.totalQr.toFixed(2)} Bs.</p>
+        <p><strong>Transferencia:</strong> ${data.totalBankTransfer.toFixed(2)} Bs.</p>
+      `,
+      `
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>N° Venta</th>
+              <th>Fecha</th>
+              <th>Método</th>
+              <th>Monto</th>
+              <th>Cobrador</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `,
+    );
+
+    const pdfUrl = await this.generatePDF(
+      html,
+      `cobranza-${new Date().toISOString().slice(0, 10)}`,
+      'reports',
+    );
+
     const history = await this.reportHistoryService.create({
-      type: 'COLLECTION',
+      type: $Enums.ReportType.COLLECTION_REPORT,
       title: 'Reporte de Cobranza',
       filters,
       pdfUrl,
       userId,
     });
 
-    return { pdfUrl, historyId: history.id };
+    return {
+      pdfUrl,
+      historyId: history.id,
+    };
   }
 
-  // ============================================================
-  // GENERACIÓN DE PDF (PUPPETEER)
-  // ============================================================
-  private async generatePDF(html: string, filename: string): Promise<string> {
-    const browser = await puppeteer.launch({ 
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'] // Para entornos Linux
-    });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdfBuffer = await page.pdf({ 
-      format: 'A4', 
-      printBackground: true,
-      margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' }
-    });
-    await browser.close();
+  private async generatePDF(
+    html: string,
+    filename: string,
+    folder: 'reports' | 'purchases' | 'sales' = 'reports',
+  ): Promise<string> {
+    let browser: puppeteer.Browser | null = null;
 
-    const uploadDir = path.join(process.cwd(), 'uploads', 'reports');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    const filePath = path.join(uploadDir, `${filename}.pdf`);
-    fs.writeFileSync(filePath, pdfBuffer);
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      });
 
-    return `/uploads/reports/${filename}.pdf`;
-  }
+      const page = await browser.newPage();
 
-  // ============================================================
-  // CONSTRUCTORES DE HTML PARA CADA REPORTE
-  // ============================================================
-  private buildInventoryHTML(data: any): string {
-    let categoriesHTML = '';
-    for (const [catName, catData] of Object.entries(data.grouped) as any) {
-      let rows = '';
-      for (const product of catData.products) {
-        rows += `
-          <tr>
-            <td style="padding:6px; border:1px solid #ddd;">${product.name}</td>
-            <td style="padding:6px; border:1px solid #ddd; text-align:center;">${product.stock}</td>
-            <td style="padding:6px; border:1px solid #ddd; text-align:right;">${product.unitPrice.toFixed(2)}</td>
-            <td style="padding:6px; border:1px solid #ddd; text-align:right;">${product.totalValue.toFixed(2)}</td>
-          </tr>
-        `;
+      await page.setContent(html, { waitUntil: 'load' });
+
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '20px',
+          bottom: '20px',
+          left: '20px',
+          right: '20px',
+        },
+      });
+
+      const safeFilename = filename.replace(/[^\w-]/g, '_');
+      const uploadDir = path.join(process.cwd(), 'uploads', folder);
+
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
       }
-      categoriesHTML += `
-        <h3 style="background:#f0f0f0; padding:10px; margin-top:20px;">${catName}</h3>
-        <table style="width:100%; border-collapse:collapse; margin-bottom:10px;">
-          <thead>
-            <tr style="background:#e0e0e0;">
-              <th style="padding:8px; border:1px solid #ddd; text-align:left;">Producto</th>
-              <th style="padding:8px; border:1px solid #ddd; text-align:center;">Stock</th>
-              <th style="padding:8px; border:1px solid #ddd; text-align:right;">Precio Unit.</th>
-              <th style="padding:8px; border:1px solid #ddd; text-align:right;">Valor Total</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-          <tfoot>
-            <tr style="font-weight:bold; background:#f9f9f9;">
-              <td colspan="3" style="padding:8px; border:1px solid #ddd; text-align:right;">Subtotal ${catName}</td>
-              <td style="padding:8px; border:1px solid #ddd; text-align:right;">${catData.subtotal.toFixed(2)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      `;
-    }
 
+      const filePath = path.join(uploadDir, `${safeFilename}.pdf`);
+
+      fs.writeFileSync(filePath, pdfBuffer);
+
+      return `/uploads/${folder}/${safeFilename}.pdf`;
+    } finally {
+      if (browser) {
+        await browser.close();
+      }
+    }
+  }
+
+  private buildDocumentHTML(
+    title: string,
+    infoHTML: string,
+    contentHTML: string,
+  ): string {
     return `
       <!DOCTYPE html>
       <html>
         <head>
-          <meta charset="UTF-8">
-          <title>Inventario General</title>
+          <meta charset="UTF-8" />
           <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .header h1 { color: #2c3e50; }
-            .grand-total { font-size: 18px; font-weight: bold; text-align: right; margin-top: 20px; padding: 12px; background: #d4edda; }
+            body {
+              font-family: Arial, sans-serif;
+              padding: 20px;
+              color: #222;
+            }
+
+            .header {
+              text-align: center;
+              margin-bottom: 25px;
+              border-bottom: 2px solid #2c3e50;
+              padding-bottom: 15px;
+            }
+
+            .header h1 {
+              color: #2c3e50;
+              margin: 0;
+            }
+
+            .info {
+              background: #f8f8f8;
+              padding: 12px;
+              border: 1px solid #ddd;
+              margin-bottom: 20px;
+            }
+
+            .info p {
+              margin: 5px 0;
+            }
+
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 10px;
+            }
+
+            th {
+              background: #e0e0e0;
+            }
+
+            th,
+            td {
+              border: 1px solid #ccc;
+              padding: 8px;
+              font-size: 12px;
+            }
+
+            .total {
+              margin-top: 15px;
+              padding: 10px;
+              background: #d4edda;
+              border: 1px solid #b7dfc1;
+              font-size: 18px;
+              font-weight: bold;
+              text-align: right;
+            }
+
+            .footer {
+              margin-top: 30px;
+              border-top: 1px solid #ccc;
+              padding-top: 10px;
+              text-align: center;
+              font-size: 11px;
+              color: #777;
+            }
           </style>
         </head>
-        <body>
-          <div class="header">
-            <h1>INVENTARIO GENERAL</h1>
-            <p>Fecha de generación: ${new Date(data.generatedAt).toLocaleDateString('es-BO')}</p>
-          </div>
-          ${categoriesHTML}
-          <div class="grand-total">
-            TOTAL GENERAL: ${data.grandTotal.toFixed(2)} Bs.
-          </div>
-        </body>
-      </html>
-    `;
-  }
 
-  private buildSalesHTML(data: any, title: string): string {
-    // Construir tabla dinámica
-    let tableRows = '';
-    for (const row of data.rows) {
-      tableRows += `<tr>`;
-      tableRows += `<td style="padding:6px; border:1px solid #ddd;">${row.clientName}</td>`;
-      for (const product of data.productList) {
-        const qty = row[product] || 0;
-        tableRows += `<td style="padding:6px; border:1px solid #ddd; text-align:center;">${qty}</td>`;
-      }
-      tableRows += `<td style="padding:6px; border:1px solid #ddd; text-align:right;">${row.total.toFixed(2)}</td>`;
-      tableRows += `<td style="padding:6px; border:1px solid #ddd; text-align:center;">${row.paymentMethods}</td>`;
-      tableRows += `</tr>`;
-    }
-
-    let productHeaders = '';
-    for (const product of data.productList) {
-      productHeaders += `<th style="padding:8px; border:1px solid #ddd; text-align:center;">${product}</th>`;
-    }
-
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>${title}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .header h1 { color: #2c3e50; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #ddd; padding: 6px; }
-            th { background: #f0f0f0; }
-            .footer { margin-top: 20px; text-align: right; font-size: 12px; color: #888; }
-          </style>
-        </head>
         <body>
           <div class="header">
             <h1>${title}</h1>
-            <p>Fecha de generación: ${new Date(data.generatedAt).toLocaleDateString('es-BO')}</p>
+            <p>Generado: ${new Date().toLocaleString('es-BO')}</p>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="padding:8px; border:1px solid #ddd; text-align:left;">Cliente</th>
-                ${productHeaders}
-                <th style="padding:8px; border:1px solid #ddd; text-align:right;">Total</th>
-                <th style="padding:8px; border:1px solid #ddd; text-align:center;">Método de Pago</th>
-              </tr>
-            </thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          <div class="footer">Reporte generado automáticamente por el sistema.</div>
-        </body>
-      </html>
-    `;
-  }
 
-  private buildSalesSummaryHTML(data: any): string {
-    // Similar al HTML de ventas pero con columna de saldo pendiente y sumas
-    let tableRows = '';
-    for (const row of data.rows) {
-      tableRows += `<tr>`;
-      tableRows += `<td style="padding:6px; border:1px solid #ddd;">${row.clientName}</td>`;
-      for (const product of data.productList) {
-        const qty = row[product] || 0;
-        tableRows += `<td style="padding:6px; border:1px solid #ddd; text-align:center;">${qty}</td>`;
-      }
-      tableRows += `<td style="padding:6px; border:1px solid #ddd; text-align:right;">${row.total.toFixed(2)}</td>`;
-      tableRows += `<td style="padding:6px; border:1px solid #ddd; text-align:right;">${row.pending.toFixed(2)}</td>`;
-      tableRows += `<td style="padding:6px; border:1px solid #ddd; text-align:center;">${row.paymentMethods}</td>`;
-      tableRows += `</tr>`;
-    }
-
-    let productHeaders = '';
-    for (const product of data.productList) {
-      productHeaders += `<th style="padding:8px; border:1px solid #ddd; text-align:center;">${product}</th>`;
-    }
-
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Resumen de Ventas (Clientes con Deuda)</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .header h1 { color: #2c3e50; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #ddd; padding: 6px; }
-            th { background: #f0f0f0; }
-            .summary { margin-top: 20px; padding: 15px; background: #f9f9f9; border: 1px solid #ddd; }
-            .summary-item { display: inline-block; margin-right: 30px; }
-            .summary-item strong { color: #2c3e50; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>RESUMEN DE VENTAS</h1>
-            <p>Clientes con deuda pendiente</p>
-            <p>Fecha de generación: ${new Date(data.generatedAt).toLocaleDateString('es-BO')}</p>
+          <div class="info">
+            ${infoHTML}
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="padding:8px; border:1px solid #ddd; text-align:left;">Cliente</th>
-                ${productHeaders}
-                <th style="padding:8px; border:1px solid #ddd; text-align:right;">Total</th>
-                <th style="padding:8px; border:1px solid #ddd; text-align:right;">Saldo Pendiente</th>
-                <th style="padding:8px; border:1px solid #ddd; text-align:center;">Método de Pago</th>
-              </tr>
-            </thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          <div class="summary">
-            <div class="summary-item"><strong>Total General:</strong> ${data.totals.totalGeneral.toFixed(2)} Bs.</div>
-            <div class="summary-item"><strong>Total Pendiente:</strong> ${data.totals.totalPending.toFixed(2)} Bs.</div>
-          </div>
-          <div class="footer">Reporte generado automáticamente por el sistema.</div>
-        </body>
-      </html>
-    `;
-  }
 
-  private buildCollectionHTML(data: any): string {
-    let rows = '';
-    for (const row of data.rows) {
-      rows += `
-        <tr>
-          <td style="padding:6px; border:1px solid #ddd;">${row.clientName}</td>
-          <td style="padding:6px; border:1px solid #ddd; text-align:center;">${new Date(row.paymentDate).toLocaleDateString('es-BO')}</td>
-          <td style="padding:6px; border:1px solid #ddd; text-align:center;">${row.method}</td>
-          <td style="padding:6px; border:1px solid #ddd; text-align:right;">${row.amount.toFixed(2)}</td>
-          <td style="padding:6px; border:1px solid #ddd; text-align:right;">${row.pending.toFixed(2)}</td>
-          <td style="padding:6px; border:1px solid #ddd; text-align:center;">${row.status}</td>
-        </tr>
-      `;
-    }
+          ${contentHTML}
 
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Reporte de Cobranza</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .header h1 { color: #2c3e50; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #ddd; padding: 6px; }
-            th { background: #f0f0f0; }
-            .total { margin-top: 20px; font-size: 16px; font-weight: bold; text-align: right; padding: 10px; background: #d4edda; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>REPORTE DE COBRANZA</h1>
-            <p>Fecha de generación: ${new Date(data.generatedAt).toLocaleDateString('es-BO')}</p>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="padding:8px; border:1px solid #ddd; text-align:left;">Cliente</th>
-                <th style="padding:8px; border:1px solid #ddd; text-align:center;">Fecha de Pago</th>
-                <th style="padding:8px; border:1px solid #ddd; text-align:center;">Método</th>
-                <th style="padding:8px; border:1px solid #ddd; text-align:right;">Monto</th>
-                <th style="padding:8px; border:1px solid #ddd; text-align:right;">Saldo Pendiente</th>
-                <th style="padding:8px; border:1px solid #ddd; text-align:center;">Estado</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-          <div class="total">
-            TOTAL COBRADO: ${data.totalCobrado.toFixed(2)} Bs.
+          <div class="footer">
+            Sistema de Ventas e Inventarios
           </div>
         </body>
       </html>
