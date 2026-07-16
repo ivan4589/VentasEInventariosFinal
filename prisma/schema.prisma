@@ -257,22 +257,23 @@ enum PaymentMethod {
   BANK_TRANSFER
 }
 
-model ReportHistory {
-  id         String     @id @default(cuid())
-  type       ReportType
-  title      String
-  parameters String?
-  fileUrl    String
-  userId     Int
-  user       User       @relation(fields: [userId], references: [id])
-  createdAt  DateTime   @default(now())
 
-  @@map("report_histories")
+model ReportHistory {
+  id          String      @id @default(cuid())
+  type        ReportType
+  title       String
+  filters     Json?       // Guarda los filtros aplicados (para mostrar en el historial)
+  pdfUrl      String
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  createdAt   DateTime    @default(now())
+
+  @@map("report_history")
 }
 
 enum ReportType {
   INVENTORY_GENERAL
-  INVENTORY_DETAILED
-  SALES_REPORT
-  COLLECTION_REPORT
+  SALES_BY_DATE
+  SALES_SUMMARY
+  COLLECTION
 }

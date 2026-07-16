@@ -1,7 +1,7 @@
-import { IsOptional, IsUUID } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class GenerateInventoryPdfDto {
   @IsOptional()
-  @IsUUID()
-  categoryId?: string; // Si se envía, filtra por categoría
+  @IsString()
+  categoryId?: string;
 }

@@ -11,4 +11,7 @@ export class InventoryItemDto {
 export class InventoryResponseDto {
   items: InventoryItemDto[];
   generatedAt: Date;
+  totalProducts: number;
+  totalStock: number;
+  lowStockProducts: number;
 }
