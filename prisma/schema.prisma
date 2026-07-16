@@ -193,6 +193,9 @@ model Sale {
   observations  String?
   pdfUrl        String?
 
+  status      SaleStatus @default(PENDING) // PENDING, CONFIRMED, PARTIALLY_PAID, PAID, CANCELLED
+  payments    Payment[]
+
   details SaleDetail[]
 
   createdAt DateTime @default(now())
@@ -226,4 +229,37 @@ enum PaymentStatus {
   PENDING // Por cobrar
   PARTIALLY_PAID
   PAID
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  saleId      String
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  amount      Float
+  method      PaymentMethod // CASH, QR, BANK_TRANSFER
+  reference   String?  // Número de transacción si es QR o transferencia
+  receivedAt  DateTime @default(now())
+  observations String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("payments")
+}
+
+enum SaleStatus {
+  PENDING
+  CONFIRMED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  QR
+  BANK_TRANSFER
 }
