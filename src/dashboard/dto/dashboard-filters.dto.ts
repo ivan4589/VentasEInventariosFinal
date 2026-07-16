@@ -1,5 +1,5 @@
-import { IsOptional, IsDateString, IsUUID, IsEnum } from 'class-validator';
-import { ClientType } from '@prisma/client';
+import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import { $Enums } from '../../../generated/prisma/client';
 
 export class DashboardFiltersDto {
   @IsOptional()
@@ -11,14 +11,14 @@ export class DashboardFiltersDto {
   dateTo?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   locationId?: string;
 
   @IsOptional()
-  @IsEnum(ClientType)
-  clientType?: ClientType;
+  @IsEnum($Enums.ClientType)
+  clientType?: $Enums.ClientType;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   productId?: string;
 }

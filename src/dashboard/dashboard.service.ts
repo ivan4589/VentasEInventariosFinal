@@ -1,83 +1,172 @@
 import { Injectable } from '@nestjs/common';
+import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DashboardFiltersDto } from './dto/dashboard-filters.dto';
-import { ClientType } from '@prisma/client';
 
 @Injectable()
 export class DashboardService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  // 1. KPI
+  private buildClientFilter(filters: DashboardFiltersDto) {
+    const clientFilter: any = {};
+
+    if (filters.locationId) {
+      clientFilter.locationId = filters.locationId;
+    }
+
+    if (filters.clientType) {
+      clientFilter.type = filters.clientType;
+    }
+
+    return Object.keys(clientFilter).length > 0 ? clientFilter : undefined;
+  }
+
+  private buildDateFilter(dateFrom?: string, dateTo?: string) {
+    const dateFilter: any = {};
+
+    if (dateFrom) {
+      dateFilter.gte = new Date(dateFrom);
+    }
+
+    if (dateTo) {
+      dateFilter.lte = new Date(dateTo);
+    }
+
+    return Object.keys(dateFilter).length > 0 ? dateFilter : undefined;
+  }
+
+  private buildSaleWhere(filters: DashboardFiltersDto) {
+    const where: any = {
+      status: $Enums.SaleStatus.CONFIRMED,
+    };
+
+    const dateFilter = this.buildDateFilter(filters.dateFrom, filters.dateTo);
+
+    if (dateFilter) {
+      where.date = dateFilter;
+    }
+
+    const clientFilter = this.buildClientFilter(filters);
+
+    if (clientFilter) {
+      where.client = clientFilter;
+    }
+
+    return where;
+  }
+
   async getKPI(filters: DashboardFiltersDto) {
-    const { dateFrom, dateTo, locationId, clientType } = filters;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-    // Construir filtros base para ventas confirmadas/pagadas
-    const saleStatuses = ['CONFIRMED', 'PARTIALLY_PAID', 'PAID'];
-    const whereSale: any = { status: { in: saleStatuses } };
-    if (dateFrom) whereSale.date = { gte: new Date(dateFrom) };
-    if (dateTo) whereSale.date = { ...whereSale.date, lte: new Date(dateTo) };
-    if (locationId) whereSale.client = { locationId };
-    if (clientType) whereSale.client = { type: clientType };
+    const baseSaleWhere = this.buildSaleWhere(filters);
 
-    // Ventas del día (hoy)
     const salesToday = await this.prisma.sale.aggregate({
-      where: { ...whereSale, date: { gte: today } },
-      _sum: { total: true },
+      where: {
+        ...baseSaleWhere,
+        date: {
+          gte: today,
+        },
+      },
+      _sum: {
+        total: true,
+      },
     });
 
-    // Ventas del mes (desde inicio de mes)
     const salesMonth = await this.prisma.sale.aggregate({
-      where: { ...whereSale, date: { gte: startOfMonth } },
-      _sum: { total: true },
+      where: {
+        ...baseSaleWhere,
+        date: {
+          gte: startOfMonth,
+        },
+      },
+      _sum: {
+        total: true,
+      },
     });
 
-    // Deuda total (ventas con estado PENDING o PARTIALLY_PAID)
-    const debtStatuses = ['PENDING', 'PARTIALLY_PAID'];
-    const whereDebt: any = { status: { in: debtStatuses } };
-    if (dateFrom) whereDebt.date = { gte: new Date(dateFrom) };
-    if (dateTo) whereDebt.date = { ...whereDebt.date, lte: new Date(dateTo) };
-    if (locationId) whereDebt.client = { locationId };
-    if (clientType) whereDebt.client = { type: clientType };
+    const debtWhere: any = {
+      status: $Enums.SaleStatus.CONFIRMED,
+      paymentStatus: {
+        in: [
+          $Enums.PaymentStatus.PENDING,
+          $Enums.PaymentStatus.PARTIALLY_PAID,
+        ],
+      },
+    };
 
-    const totalDebt = await this.prisma.sale.aggregate({
-      where: whereDebt,
-      _sum: { total: true },
+    const dateFilter = this.buildDateFilter(filters.dateFrom, filters.dateTo);
+
+    if (dateFilter) {
+      debtWhere.date = dateFilter;
+    }
+
+    const clientFilter = this.buildClientFilter(filters);
+
+    if (clientFilter) {
+      debtWhere.client = clientFilter;
+    }
+
+    const salesWithDebt = await this.prisma.sale.findMany({
+      where: debtWhere,
+      include: {
+        payments: true,
+      },
     });
 
-    // Clientes activos (últimos 30 días)
+    const totalDebt = salesWithDebt.reduce((sum, sale) => {
+      const paid = sale.payments.reduce(
+        (paymentSum, payment) => paymentSum + payment.amount,
+        0,
+      );
+
+      return sum + Math.max(sale.total - paid, 0);
+    }, 0);
+
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
     const activeClients = await this.prisma.sale.groupBy({
       by: ['clientId'],
       where: {
-        ...whereSale,
-        date: { gte: thirtyDaysAgo },
+        ...baseSaleWhere,
+        date: {
+          gte: thirtyDaysAgo,
+        },
       },
-      _count: { clientId: true },
+      _count: {
+        clientId: true,
+      },
     });
 
-    // Productos en stock total
     const stock = await this.prisma.product.aggregate({
-      _sum: { stock: true },
-    });
-
-    // Alertas de stock (stock < minStock)
-    const stockAlerts = await this.prisma.product.count({
-      where: {
-        stock: { lt: this.prisma.product.fields.minStock },
+      _sum: {
+        stock: true,
       },
     });
 
-    // Cobranza del día (pagos de hoy)
+    const products = await this.prisma.product.findMany({
+      select: {
+        stock: true,
+        minStock: true,
+      },
+    });
+
+    const stockAlerts = products.filter(
+      (product) => product.minStock > 0 && product.stock <= product.minStock,
+    ).length;
+
     const paymentsToday = await this.prisma.payment.aggregate({
       where: {
-        receivedAt: { gte: today },
+        receivedAt: {
+          gte: today,
+        },
       },
-      _sum: { amount: true },
+      _sum: {
+        amount: true,
+      },
     });
 
     return {
@@ -85,203 +174,326 @@ export class DashboardService {
       salesMonth: salesMonth._sum.total || 0,
       activeClients: activeClients.length,
       totalStock: stock._sum.stock || 0,
-      totalDebt: totalDebt._sum.total || 0,
+      totalDebt,
       collectionToday: paymentsToday._sum.amount || 0,
       stockAlerts,
     };
   }
 
-  // 2. Tendencia de ventas (últimos N días o rango)
   async getSalesTrend(filters: DashboardFiltersDto) {
-    const { dateFrom, dateTo, locationId, clientType } = filters;
-    // Si no se especifica, tomamos últimos 30 días
-    let startDate = dateFrom ? new Date(dateFrom) : new Date();
-    startDate.setDate(startDate.getDate() - 30);
-    const endDate = dateTo ? new Date(dateTo) : new Date();
+    const endDate = filters.dateTo ? new Date(filters.dateTo) : new Date();
 
-    const sales = await this.prisma.sale.groupBy({
-      by: ['date'],
-      where: {
-        status: { in: ['CONFIRMED', 'PARTIALLY_PAID', 'PAID'] },
-        date: { gte: startDate, lte: endDate },
-        ...(locationId && { client: { locationId } }),
-        ...(clientType && { client: { type: clientType } }),
+    const startDate = filters.dateFrom ? new Date(filters.dateFrom) : new Date();
+
+    if (!filters.dateFrom) {
+      startDate.setDate(startDate.getDate() - 30);
+    }
+
+    const where = this.buildSaleWhere({
+      ...filters,
+      dateFrom: startDate.toISOString(),
+      dateTo: endDate.toISOString(),
+    });
+
+    const sales = await this.prisma.sale.findMany({
+      where,
+      select: {
+        date: true,
+        total: true,
       },
-      _sum: { total: true },
-      orderBy: { date: 'asc' },
+      orderBy: {
+        date: 'asc',
+      },
     });
 
-    // Rellenar días faltantes con 0
-    const dateMap = new Map();
-    sales.forEach(item => {
-      const key = item.date.toISOString().split('T')[0];
-      dateMap.set(key, item._sum.total || 0);
-    });
+    const dateMap = new Map<string, number>();
 
-    const labels = [];
-    const data = [];
-    let current = new Date(startDate);
+    for (const sale of sales) {
+      const key = sale.date.toISOString().split('T')[0];
+      dateMap.set(key, (dateMap.get(key) || 0) + sale.total);
+    }
+
+    const labels: string[] = [];
+    const data: number[] = [];
+
+    const current = new Date(startDate);
+
     while (current <= endDate) {
       const key = current.toISOString().split('T')[0];
+
       labels.push(key);
       data.push(dateMap.get(key) || 0);
+
       current.setDate(current.getDate() + 1);
     }
 
-    return { labels, data };
+    return {
+      labels,
+      data,
+    };
   }
 
-  // 3. Métodos de pago
   async getPaymentMethods(filters: DashboardFiltersDto) {
-    const { dateFrom, dateTo, locationId, clientType } = filters;
     const where: any = {};
-    if (dateFrom) where.receivedAt = { gte: new Date(dateFrom) };
-    if (dateTo) where.receivedAt = { ...where.receivedAt, lte: new Date(dateTo) };
-    if (locationId) where.client = { locationId };
-    if (clientType) where.client = { type: clientType };
+
+    const dateFilter = this.buildDateFilter(filters.dateFrom, filters.dateTo);
+
+    if (dateFilter) {
+      where.receivedAt = dateFilter;
+    }
+
+    const clientFilter = this.buildClientFilter(filters);
+
+    if (clientFilter) {
+      where.client = clientFilter;
+    }
 
     const payments = await this.prisma.payment.groupBy({
       by: ['method'],
       where,
-      _sum: { amount: true },
+      _sum: {
+        amount: true,
+      },
     });
 
-    const result = {};
-    payments.forEach(item => {
+    const result: Record<string, number> = {
+      CASH: 0,
+      QR: 0,
+      BANK_TRANSFER: 0,
+    };
+
+    for (const item of payments) {
       result[item.method] = item._sum.amount || 0;
-    });
+    }
+
     return result;
   }
 
-  // 4. Top productos más vendidos
   async getTopProducts(filters: DashboardFiltersDto) {
-    const { dateFrom, dateTo, locationId, clientType, productId } = filters;
     const where: any = {};
-    if (dateFrom) where.sale = { date: { gte: new Date(dateFrom) } };
-    if (dateTo) where.sale = { date: { ...where.sale?.date, lte: new Date(dateTo) } };
-    if (locationId) where.sale = { client: { locationId } };
-    if (clientType) where.sale = { client: { type: clientType } };
-    if (productId) where.productId = productId;
+
+    if (filters.productId) {
+      where.productId = filters.productId;
+    }
+
+    const saleFilter: any = {
+      status: $Enums.SaleStatus.CONFIRMED,
+    };
+
+    const dateFilter = this.buildDateFilter(filters.dateFrom, filters.dateTo);
+
+    if (dateFilter) {
+      saleFilter.date = dateFilter;
+    }
+
+    const clientFilter = this.buildClientFilter(filters);
+
+    if (clientFilter) {
+      saleFilter.client = clientFilter;
+    }
+
+    where.sale = saleFilter;
 
     const top = await this.prisma.saleDetail.groupBy({
       by: ['productId'],
       where,
-      _sum: { quantity: true },
-      orderBy: { _sum: { quantity: 'desc' } },
+      _sum: {
+        quantity: true,
+        subtotal: true,
+      },
+      orderBy: {
+        _sum: {
+          quantity: 'desc',
+        },
+      },
       take: 5,
     });
 
-    // Obtener nombres de productos
-    const productIds = top.map(item => item.productId);
-    const products = await this.prisma.product.findMany({
-      where: { id: { in: productIds } },
-      select: { id: true, name: true },
-    });
-    const productMap = new Map(products.map(p => [p.id, p.name]));
+    const productIds = top.map((item) => item.productId);
 
-    return top.map(item => ({
-      product: productMap.get(item.productId) || 'Desconocido',
-      quantity: item._sum.quantity || 0,
-    }));
-  }
-
-  // 5. Distribución de clientes por tipo
-  async getClientTypes() {
-    const types = await this.prisma.client.groupBy({
-      by: ['type'],
-      _count: { type: true },
-    });
-    const result = {};
-    types.forEach(item => {
-      result[item.type] = item._count.type;
-    });
-    return result;
-  }
-
-  // 6. Top deudores
-  async getTopDebtors(filters: DashboardFiltersDto) {
-    const { dateFrom, dateTo, locationId, clientType } = filters;
-    const where: any = {
-      status: { in: ['PENDING', 'PARTIALLY_PAID'] },
-    };
-    if (dateFrom) where.date = { gte: new Date(dateFrom) };
-    if (dateTo) where.date = { ...where.date, lte: new Date(dateTo) };
-    if (locationId) where.client = { locationId };
-    if (clientType) where.client = { type: clientType };
-
-    const sales = await this.prisma.sale.groupBy({
-      by: ['clientId'],
-      where,
-      _sum: { total: true },
-      orderBy: { _sum: { total: 'desc' } },
-      take: 10,
-    });
-
-    // Obtener nombres de clientes y última compra
-    const clientIds = sales.map(item => item.clientId);
-    const clients = await this.prisma.client.findMany({
-      where: { id: { in: clientIds } },
-      select: { id: true, fullName: true, sales: { orderBy: { date: 'desc' }, take: 1, select: { date: true } } },
-    });
-    const clientMap = new Map(clients.map(c => [c.id, { name: c.fullName, lastPurchase: c.sales[0]?.date || null }]));
-
-    return sales.map(item => ({
-      clientName: clientMap.get(item.clientId)?.name || 'Desconocido',
-      debt: item._sum.total || 0,
-      lastPurchase: clientMap.get(item.clientId)?.lastPurchase,
-    }));
-  }
-
-  // 7. Stock bajo
-  async getLowStock() {
     const products = await this.prisma.product.findMany({
       where: {
-        stock: { lt: this.prisma.product.fields.minStock },
+        id: {
+          in: productIds,
+        },
       },
       select: {
         id: true,
         name: true,
-        stock: true,
-        minStock: true,
-        category: { select: { name: true } },
       },
-      orderBy: { stock: 'asc' },
     });
-    return products.map(p => ({
-      product: p.name,
-      category: p.category?.name || 'Sin categoría',
-      stock: p.stock,
-      minStock: p.minStock,
+
+    const productMap = new Map(products.map((product) => [product.id, product.name]));
+
+    return top.map((item) => ({
+      productId: item.productId,
+      product: productMap.get(item.productId) || 'Desconocido',
+      quantity: item._sum.quantity || 0,
+      total: item._sum.subtotal || 0,
     }));
   }
 
-  // 8. Últimas ventas
-  async getLastSales(filters: DashboardFiltersDto) {
-    const { dateFrom, dateTo, locationId, clientType } = filters;
-    const where: any = {
-      status: { in: ['CONFIRMED', 'PARTIALLY_PAID', 'PAID'] },
+  async getClientTypes() {
+    const types = await this.prisma.client.groupBy({
+      by: ['type'],
+      _count: {
+        type: true,
+      },
+    });
+
+    const result: Record<string, number> = {
+      NORMAL: 0,
+      ESPECIAL: 0,
+      CAMINO: 0,
     };
-    if (dateFrom) where.date = { gte: new Date(dateFrom) };
-    if (dateTo) where.date = { ...where.date, lte: new Date(dateTo) };
-    if (locationId) where.client = { locationId };
-    if (clientType) where.client = { type: clientType };
+
+    for (const item of types) {
+      result[item.type] = item._count.type;
+    }
+
+    return result;
+  }
+
+  async getTopDebtors(filters: DashboardFiltersDto) {
+    const where: any = {
+      status: $Enums.SaleStatus.CONFIRMED,
+      paymentStatus: {
+        in: [
+          $Enums.PaymentStatus.PENDING,
+          $Enums.PaymentStatus.PARTIALLY_PAID,
+        ],
+      },
+    };
+
+    const dateFilter = this.buildDateFilter(filters.dateFrom, filters.dateTo);
+
+    if (dateFilter) {
+      where.date = dateFilter;
+    }
+
+    const clientFilter = this.buildClientFilter(filters);
+
+    if (clientFilter) {
+      where.client = clientFilter;
+    }
 
     const sales = await this.prisma.sale.findMany({
       where,
       include: {
-        client: { select: { fullName: true } },
-        payments: { select: { amount: true, method: true } },
+        client: true,
+        payments: true,
       },
-      orderBy: { date: 'desc' },
+      orderBy: {
+        date: 'desc',
+      },
+    });
+
+    const debtorMap = new Map<
+      string,
+      {
+        clientId: string;
+        clientName: string;
+        debt: number;
+        lastPurchase: Date | null;
+      }
+    >();
+
+    for (const sale of sales) {
+      const paid = sale.payments.reduce(
+        (sum, payment) => sum + payment.amount,
+        0,
+      );
+
+      const debt = Math.max(sale.total - paid, 0);
+
+      if (debt <= 0) {
+        continue;
+      }
+
+      const current = debtorMap.get(sale.clientId);
+
+      if (!current) {
+        debtorMap.set(sale.clientId, {
+          clientId: sale.clientId,
+          clientName: sale.client.fullName,
+          debt,
+          lastPurchase: sale.date,
+        });
+
+        continue;
+      }
+
+      current.debt += debt;
+
+      if (!current.lastPurchase || sale.date > current.lastPurchase) {
+        current.lastPurchase = sale.date;
+      }
+    }
+
+    return Array.from(debtorMap.values())
+      .sort((a, b) => b.debt - a.debt)
+      .slice(0, 10);
+  }
+
+  async getLowStock() {
+    const products = await this.prisma.product.findMany({
+      include: {
+        category: true,
+      },
+      orderBy: {
+        stock: 'asc',
+      },
+    });
+
+    return products
+      .filter(
+        (product) => product.minStock > 0 && product.stock <= product.minStock,
+      )
+      .map((product) => ({
+        productId: product.id,
+        product: product.name,
+        category: product.category?.name || 'Sin categoría',
+        stock: product.stock,
+        minStock: product.minStock,
+        unit: product.unit,
+      }));
+  }
+
+  async getLastSales(filters: DashboardFiltersDto) {
+    const where = this.buildSaleWhere(filters);
+
+    const sales = await this.prisma.sale.findMany({
+      where,
+      include: {
+        client: {
+          select: {
+            fullName: true,
+          },
+        },
+        payments: {
+          select: {
+            amount: true,
+            method: true,
+          },
+        },
+      },
+      orderBy: {
+        date: 'desc',
+      },
       take: 10,
     });
 
-    return sales.map(sale => ({
+    return sales.map((sale) => ({
+      id: sale.id,
+      saleNumber: sale.saleNumber,
       date: sale.date,
       clientName: sale.client.fullName,
       total: sale.total,
       status: sale.status,
-      paymentMethods: sale.payments.map(p => p.method).join(', ') || 'Sin pago',
+      paymentStatus: sale.paymentStatus,
+      paid: sale.payments.reduce((sum, payment) => sum + payment.amount, 0),
+      paymentMethods:
+        sale.payments.map((payment) => payment.method).join(', ') || 'Sin pago',
     }));
   }
 }
