@@ -23,14 +23,14 @@ export class SubCategoriesController {
   constructor(private readonly subCategoriesService: SubCategoriesService) {}
 
   @Get()
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   findAll(@Query('categoryId') categoryId?: string) {
     if (categoryId) return this.subCategoriesService.findByCategory(categoryId);
     return this.subCategoriesService.findAll();
   }
 
   @Get(':id')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   findOne(@Param('id') id: string) {
     return this.subCategoriesService.findOne(id);
   }

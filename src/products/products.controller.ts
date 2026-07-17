@@ -23,7 +23,7 @@ export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Get()
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   findAll(
     @Query('search') search?: string,
     @Query('categoryId') categoryId?: string,
@@ -36,7 +36,7 @@ export class ProductsController {
   }
 
   @Get(':id')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   findOne(@Param('id') id: string) {
     return this.productsService.findOne(id);
   }

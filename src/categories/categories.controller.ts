@@ -22,13 +22,13 @@ export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Get()
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   findAll() {
     return this.categoriesService.findAll();
   }
 
   @Get(':id')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   findOne(@Param('id') id: string) {
     return this.categoriesService.findOne(id);
   }
