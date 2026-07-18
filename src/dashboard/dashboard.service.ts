@@ -650,6 +650,104 @@ export class DashboardService {
   }
 
   async getPurchasesSummary(filters: DashboardFiltersDto) {
+  const dateFilter = this.buildDateFilter(
+    filters.dateFrom,
+    filters.dateTo,
+  );
+
+  const receivedWhere: any = {
+    status: $Enums.PurchaseProviderStatus.RECEIVED,
+  };
+
+  const pendingWhere: any = {
+    status: $Enums.PurchaseProviderStatus.PENDING,
+  };
+
+  if (dateFilter) {
+    receivedWhere.purchase = {
+      date: dateFilter,
+    };
+
+    pendingWhere.purchase = {
+      date: dateFilter,
+    };
+  }
+
+  const [received, pending, byProvider] = await Promise.all([
+    this.prisma.purchaseProvider.aggregate({
+      where: receivedWhere,
+      _sum: {
+        total: true,
+      },
+      _count: {
+        id: true,
+      },
+    }),
+
+    this.prisma.purchaseProvider.aggregate({
+      where: pendingWhere,
+      _sum: {
+        total: true,
+      },
+      _count: {
+        id: true,
+      },
+    }),
+
+    this.prisma.purchaseProvider.groupBy({
+      by: ['providerId'],
+      where: receivedWhere,
+      _sum: {
+        total: true,
+      },
+      _count: {
+        id: true,
+      },
+      orderBy: {
+        _sum: {
+          total: 'desc',
+        },
+      },
+      take: 5,
+    }),
+  ]);
+
+  const providerIds = byProvider.map((item) => item.providerId);
+
+  const providers = await this.prisma.provider.findMany({
+    where: {
+      id: {
+        in: providerIds,
+      },
+    },
+    select: {
+      id: true,
+      companyName: true,
+    },
+  });
+
+  const providerMap = new Map(
+    providers.map((provider) => [
+      provider.id,
+      provider.companyName,
+    ]),
+  );
+
+  return {
+    receivedPurchases: received._count.id,
+    receivedTotal: received._sum.total ?? 0,
+    pendingPurchases: pending._count.id,
+    pendingTotal: pending._sum.total ?? 0,
+    topProviders: byProvider.map((item) => ({
+      providerId: item.providerId,
+      provider:
+        providerMap.get(item.providerId) ?? 'Desconocido',
+      total: item._sum.total ?? 0,
+      purchases: item._count.id,
+    })),
+  };
+}
+
     const providerWhere: any = {
       status: $Enums.PurchaseProviderStatus.RECEIVED,
     };
@@ -676,6 +774,90 @@ export class DashboardService {
       },
       take: 5,
     });
+
+    const providerIds = byProvider.map((item) => item.providerId);
+
+    const providers =
+      providerIds.length > 0
+        ? await this.prisma.provider.findMany({
+            where: {
+              id: {
+                in: providerIds,
+              },
+            },
+            select: {
+              id: true,
+              companyName: true,
+            },
+          })
+        : [];
+
+    const providerMap = new Map(
+      providers.map((provider) => [provider.id, provider.companyName]),
+    );
+
+    const pendingProviderGroups = await this.prisma.purchaseProvider.count({
+      where: {
+        status: $Enums.PurchaseProviderStatus.PENDING,
+        ...(dateFilter
+          ? {
+              purchase: {
+                date: dateFilter,
+              },
+            }
+          : {}),
+      },
+    });
+
+    const receivedProviderGroups = await this.prisma.purchaseProvider.count({
+      where: {
+        status: $Enums.PurchaseProviderStatus.RECEIVED,
+        ...(dateFilter
+          ? {
+              purchase: {
+                date: dateFilter,
+              },
+            }
+          : {}),
+      },
+    });
+
+    const cancelledProviderGroups = await this.prisma.purchaseProvider.count({
+      where: {
+        status: $Enums.PurchaseProviderStatus.CANCELLED,
+        ...(dateFilter
+          ? {
+              purchase: {
+                date: dateFilter,
+              },
+            }
+          : {}),
+      },
+    });
+
+    return {
+      receivedPurchases: received._count.id,
+      receivedTotal: received._sum.total || 0,
+
+      pendingPurchases: pending._count.id,
+      pendingTotal: pending._sum.total || 0,
+
+      cancelledPurchases: cancelled._count.id,
+      cancelledTotal: cancelled._sum.total || 0,
+
+      pendingProviderGroups,
+      receivedProviderGroups,
+      cancelledProviderGroups,
+
+      topProviders: byProvider.map((item) => ({
+        providerId: item.providerId,
+        provider: providerMap.get(item.providerId) || 'Proveedor desconocido',
+        total: item._sum.total || 0,
+        purchases: item._count.id,
+      })),
+
+      generatedAt: new Date(),
+    };
   }
 
   async getProductRotation(filters: DashboardFiltersDto) {
@@ -884,4 +1066,3 @@ export class DashboardService {
       (a, b) => b.totalSales - a.totalSales,
     );
   }
-}
