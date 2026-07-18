@@ -20,13 +20,13 @@ enum Role {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(VENDEDOR)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          Int          @id @default(autoincrement())
+  name        String
+  email       String       @unique
+  password    String
+  role        Role         @default(VENDEDOR)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
   saleReturns SaleReturn[]
 
   purchases       Purchase[]
@@ -124,7 +124,7 @@ model Product {
   priceEspecial        Float
   priceMayorista       Float?
   minQuantityWholesale Int?
-  saleReturnDetails SaleReturnDetail[]
+  saleReturnDetails    SaleReturnDetail[]
 
   markupNormal    Float @default(10)
   markupCamino    Float @default(10)
@@ -223,8 +223,8 @@ enum PurchaseProviderStatus {
 }
 
 model Sale {
-  id            String        @id @default(cuid())
-  saleNumber    String        @unique
+  id         String @id @default(cuid())
+  saleNumber String @unique
 
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
@@ -243,8 +243,8 @@ model Sale {
   discount Float @default(0)
   total    Float
 
-  observations String?
-  pdfUrl       String?
+  observations    String?
+  pdfUrl          String?
   cancelledPdfUrl String?
 
   details  SaleDetail[]
@@ -266,7 +266,7 @@ model SaleDetail {
   id String @id @default(cuid())
 
   saleId String
-  sale   Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   productId String
   product   Product @relation(fields: [productId], references: [id])
@@ -291,7 +291,7 @@ model SaleReturn {
   id String @id @default(cuid())
 
   saleId String
-  sale   Sale @relation(fields: [saleId], references: [id])
+  sale   Sale   @relation(fields: [saleId], references: [id])
 
   userId Int
   user   User @relation(fields: [userId], references: [id])
@@ -311,17 +311,10 @@ model SaleReturnDetail {
   id String @id @default(cuid())
 
   saleReturnId String
-  saleReturn   SaleReturn @relation(
-    fields: [saleReturnId],
-    references: [id],
-    onDelete: Cascade
-  )
+  saleReturn   SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
 
   saleDetailId String
-  saleDetail   SaleDetail @relation(
-    fields: [saleDetailId],
-    references: [id]
-  )
+  saleDetail   SaleDetail @relation(fields: [saleDetailId], references: [id])
 
   productId String
   product   Product @relation(fields: [productId], references: [id])
@@ -370,18 +363,6 @@ model Payment {
   updatedAt    DateTime      @updatedAt
 
   @@map("payments")
-}
-
-enum SaleStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-}
-
-enum PaymentStatus {
-  PENDING
-  PARTIALLY_PAID
-  PAID
 }
 
 enum PaymentMethod {
