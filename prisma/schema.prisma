@@ -27,6 +27,7 @@ model User {
   role      Role     @default(VENDEDOR)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  saleReturns SaleReturn[]
 
   purchases       Purchase[]
   sales           Sale[]
@@ -123,6 +124,7 @@ model Product {
   priceEspecial        Float
   priceMayorista       Float?
   minQuantityWholesale Int?
+  saleReturnDetails SaleReturnDetail[]
 
   markupNormal    Float @default(10)
   markupCamino    Float @default(10)
@@ -130,6 +132,7 @@ model Product {
   markupMayorista Float @default(10)
 
   stock           Float   @default(0)
+  reservedStock   Float   @default(0)
   minStock        Float   @default(0)
   unit            String  @default("UNIDAD")
   reserveQuantity Float   @default(0)
@@ -222,40 +225,132 @@ enum PurchaseProviderStatus {
 model Sale {
   id            String        @id @default(cuid())
   saleNumber    String        @unique
-  clientId      String
-  client        Client        @relation(fields: [clientId], references: [id])
-  userId        Int
-  user          User          @relation(fields: [userId], references: [id])
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
   date          DateTime      @default(now())
   status        SaleStatus    @default(PENDING)
   paymentStatus PaymentStatus @default(PENDING)
-  total         Float
-  discount      Float         @default(0)
-  observations  String?
-  pdfUrl        String?
+  saleType      SaleType      @default(CASH)
+
+  dueDate DateTime?
+
+  subtotal Float
+  discount Float @default(0)
+  total    Float
+
+  observations String?
+  pdfUrl       String?
+  cancelledPdfUrl String?
 
   details  SaleDetail[]
   payments Payment[]
+  returns  SaleReturn[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([date])
+  @@index([clientId])
+  @@index([userId])
+  @@index([status])
+  @@index([paymentStatus])
   @@map("sales")
 }
 
 model SaleDetail {
-  id        String   @id @default(cuid())
-  saleId    String
-  sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+
+  saleId String
+  sale   Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
   productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  quantity  Float
+  product   Product @relation(fields: [productId], references: [id])
+
+  quantity  Int
   unitPrice Float
   subtotal  Float
+
+  returnedQuantity Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  returnDetails SaleReturnDetail[]
+
+  @@index([saleId])
+  @@index([productId])
   @@map("sale_details")
+}
+
+model SaleReturn {
+  id String @id @default(cuid())
+
+  saleId String
+  sale   Sale @relation(fields: [saleId], references: [id])
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  amount       Float
+  observations String?
+  createdAt    DateTime @default(now())
+
+  details SaleReturnDetail[]
+
+  @@index([saleId])
+  @@index([userId])
+  @@map("sale_returns")
+}
+
+model SaleReturnDetail {
+  id String @id @default(cuid())
+
+  saleReturnId String
+  saleReturn   SaleReturn @relation(
+    fields: [saleReturnId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  saleDetailId String
+  saleDetail   SaleDetail @relation(
+    fields: [saleDetailId],
+    references: [id]
+  )
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  quantity  Int
+  unitPrice Float
+  subtotal  Float
+
+  @@index([saleReturnId])
+  @@index([saleDetailId])
+  @@index([productId])
+  @@map("sale_return_details")
+}
+
+enum SaleStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+}
+
+enum SaleType {
+  CASH
+  CREDIT
 }
 
 model Payment {
