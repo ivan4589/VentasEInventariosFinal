@@ -1,14 +1,20 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private prisma: PrismaService,
-    private jwtService: JwtService,
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -27,6 +33,7 @@ export class AuthService {
     }
 
     const { password: _, ...result } = user;
+
     return result;
   }
 
@@ -43,18 +50,43 @@ export class AuthService {
   }
 
   async register(registerDto: RegisterDto) {
+    if (!registerDto) {
+      throw new BadRequestException('No se recibió el cuerpo de la petición');
+    }
+
+    if (!registerDto.email || !registerDto.password || !registerDto.name) {
+      throw new BadRequestException(
+        'Los campos name, email y password son obligatorios',
+      );
+    }
+
+    const normalizedEmail = registerDto.email.trim().toLowerCase();
+
+    const normalizedName = registerDto.name.trim();
+
+    const existingUser = await this.prisma.user.findUnique({
+      where: {
+        email: normalizedEmail,
+      },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('El correo electrónico ya está registrado');
+    }
+
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
     const user = await this.prisma.user.create({
       data: {
-        email: registerDto.email,
+        name: normalizedName,
+        email: normalizedEmail,
         password: hashedPassword,
-        name: registerDto.name,
-        role: registerDto.role || 'VENDEDOR',
+        role: registerDto.role ?? $Enums.Role.VENDEDOR,
       },
     });
 
-    const { password, ...result } = user;
+    const { password: _, ...result } = user;
+
     return result;
   }
 }
