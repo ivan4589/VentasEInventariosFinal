@@ -235,7 +235,9 @@ export class DashboardService {
     const estimatedProfit = totalRevenue - totalCost;
 
     const profitMargin =
-      totalRevenue > 0 ? Number(((estimatedProfit / totalRevenue) * 100).toFixed(2)) : 0;
+      totalRevenue > 0
+        ? Number(((estimatedProfit / totalRevenue) * 100).toFixed(2))
+        : 0;
 
     const averageTicket =
       sales.length > 0 ? Number((totalRevenue / sales.length).toFixed(2)) : 0;
@@ -254,7 +256,9 @@ export class DashboardService {
 
   async getSalesTrend(filters: DashboardFiltersDto) {
     const endDate = filters.dateTo ? new Date(filters.dateTo) : new Date();
-    const startDate = filters.dateFrom ? new Date(filters.dateFrom) : new Date();
+    const startDate = filters.dateFrom
+      ? new Date(filters.dateFrom)
+      : new Date();
 
     if (!filters.dateFrom) {
       startDate.setDate(startDate.getDate() - 30);
@@ -436,10 +440,7 @@ export class DashboardService {
     const where: any = {
       status: $Enums.SaleStatus.CONFIRMED,
       paymentStatus: {
-        in: [
-          $Enums.PaymentStatus.PENDING,
-          $Enums.PaymentStatus.PARTIALLY_PAID,
-        ],
+        in: [$Enums.PaymentStatus.PENDING, $Enums.PaymentStatus.PARTIALLY_PAID],
       },
     };
 
@@ -615,9 +616,13 @@ export class DashboardService {
         status: $Enums.PurchaseStatus.PENDING,
       },
       include: {
-        provider: true,
         user: true,
-        details: true,
+        providerGroups: {
+          include: {
+            provider: true,
+            details: true,
+          },
+        },
       },
       orderBy: {
         date: 'asc',
@@ -626,55 +631,38 @@ export class DashboardService {
 
     return purchases.map((purchase) => ({
       purchaseId: purchase.id,
-      provider: purchase.provider.companyName,
+      providers: purchase.providerGroups
+        .map((group) => group.provider.companyName)
+        .join(', '),
       registeredBy: purchase.user.name,
       date: purchase.date,
       daysPending: this.daysBetween(purchase.date),
       total: purchase.total,
-      detailsCount: purchase.details.length,
+      detailsCount: purchase.providerGroups.reduce(
+        (sum, group) => sum + group.details.length,
+        0,
+      ),
+      pendingProviders: purchase.providerGroups.filter(
+        (group) => group.status === $Enums.PurchaseProviderStatus.PENDING,
+      ).length,
       observations: purchase.observations,
     }));
   }
 
   async getPurchasesSummary(filters: DashboardFiltersDto) {
-    const dateFilter = this.buildDateFilter(filters.dateFrom, filters.dateTo);
-
-    const whereReceived: any = {
-      status: $Enums.PurchaseStatus.RECEIVED,
-    };
-
-    const wherePending: any = {
-      status: $Enums.PurchaseStatus.PENDING,
+    const providerWhere: any = {
+      status: $Enums.PurchaseProviderStatus.RECEIVED,
     };
 
     if (dateFilter) {
-      whereReceived.date = dateFilter;
-      wherePending.date = dateFilter;
+      providerWhere.purchase = {
+        date: dateFilter,
+      };
     }
 
-    const received = await this.prisma.purchase.aggregate({
-      where: whereReceived,
-      _sum: {
-        total: true,
-      },
-      _count: {
-        id: true,
-      },
-    });
-
-    const pending = await this.prisma.purchase.aggregate({
-      where: wherePending,
-      _sum: {
-        total: true,
-      },
-      _count: {
-        id: true,
-      },
-    });
-
-    const byProvider = await this.prisma.purchase.groupBy({
+    const byProvider = await this.prisma.purchaseProvider.groupBy({
       by: ['providerId'],
-      where: whereReceived,
+      where: providerWhere,
       _sum: {
         total: true,
       },
@@ -688,37 +676,6 @@ export class DashboardService {
       },
       take: 5,
     });
-
-    const providerIds = byProvider.map((item) => item.providerId);
-
-    const providers = await this.prisma.provider.findMany({
-      where: {
-        id: {
-          in: providerIds,
-        },
-      },
-      select: {
-        id: true,
-        companyName: true,
-      },
-    });
-
-    const providerMap = new Map(
-      providers.map((provider) => [provider.id, provider.companyName]),
-    );
-
-    return {
-      receivedPurchases: received._count.id,
-      receivedTotal: received._sum.total || 0,
-      pendingPurchases: pending._count.id,
-      pendingTotal: pending._sum.total || 0,
-      topProviders: byProvider.map((item) => ({
-        providerId: item.providerId,
-        provider: providerMap.get(item.providerId) || 'Desconocido',
-        total: item._sum.total || 0,
-        purchases: item._count.id,
-      })),
-    };
   }
 
   async getProductRotation(filters: DashboardFiltersDto) {
@@ -727,7 +684,9 @@ export class DashboardService {
     };
 
     const endDate = filters.dateTo ? new Date(filters.dateTo) : new Date();
-    const startDate = filters.dateFrom ? new Date(filters.dateFrom) : new Date();
+    const startDate = filters.dateFrom
+      ? new Date(filters.dateFrom)
+      : new Date();
 
     if (!filters.dateFrom) {
       startDate.setDate(startDate.getDate() - 30);

@@ -67,26 +67,27 @@ enum ClientType {
 }
 
 model Provider {
-  id          String     @id @default(cuid())
-  companyName String     @unique // Nombre de la empresa (ej: "Molino Andino")
-  contactName String? // Persona responsable (ej: "Juan Carlos Apolo")
-  phone       String?
-  email       String?
-  products    Product[] // Un proveedor puede tener muchos productos
-  purchases   Purchase[] // Un proveedor puede tener muchas compras
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id             String             @id @default(cuid())
+  companyName    String             @unique // Nombre de la empresa (ej: "Molino Andino")
+  contactName    String? // Persona responsable (ej: "Juan Carlos Apolo")
+  phone          String?
+  email          String?
+  products       Product[] // Un proveedor puede tener muchos productos
+  purchaseGroups PurchaseProvider[] // Un proveedor puede tener muchas compras
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   @@map("providers")
 }
 
 model Category {
-  id            String        @id @default(cuid())
-  name          String        @unique
-  subCategories SubCategory[]
-  products      Product[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id              String           @id @default(cuid())
+  name            String           @unique
+  subCategories   SubCategory[]
+  products        Product[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  purchaseDetails PurchaseDetail[]
 
   @@map("categories")
 }
@@ -143,39 +144,76 @@ model Product {
 }
 
 model Purchase {
-  id           String           @id @default(cuid())
-  providerId   String
-  provider     Provider         @relation(fields: [providerId], references: [id])
+  id           String         @id @default(cuid())
   userId       Int
-  user         User             @relation(fields: [userId], references: [id])
-  date         DateTime         @default(now())
-  status       PurchaseStatus   @default(PENDING)
-  total        Float
+  user         User           @relation(fields: [userId], references: [id])
+  date         DateTime       @default(now())
+  status       PurchaseStatus @default(PENDING)
+  total        Float          @default(0)
   observations String?
   pdfUrl       String?
-  details      PurchaseDetail[]
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+
+  providerGroups PurchaseProvider[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("purchases")
 }
 
-model PurchaseDetail {
-  id         String   @id @default(cuid())
-  purchaseId String
-  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id])
-  quantity   Float
-  unitPrice  Float // Precio de compra en ese momento
-  subtotal   Float
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+model PurchaseProvider {
+  id          String                 @id @default(cuid())
+  purchaseId  String
+  purchase    Purchase               @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  providerId  String
+  provider    Provider               @relation(fields: [providerId], references: [id])
+  status      PurchaseProviderStatus @default(PENDING)
+  total       Float                  @default(0)
+  receivedAt  DateTime?
+  cancelledAt DateTime?
 
+  details PurchaseDetail[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([purchaseId, providerId])
+  @@index([purchaseId])
+  @@index([providerId])
+  @@map("purchase_providers")
+}
+
+model PurchaseDetail {
+  id                 String           @id @default(cuid())
+  purchaseProviderId String
+  purchaseProvider   PurchaseProvider @relation(fields: [purchaseProviderId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  quantity  Float
+  unitPrice Float
+  subtotal  Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([purchaseProviderId])
+  @@index([productId])
+  @@index([categoryId])
   @@map("purchase_details")
 }
 
 enum PurchaseStatus {
+  PENDING
+  RECEIVED
+  CANCELLED
+}
+
+enum PurchaseProviderStatus {
   PENDING
   RECEIVED
   CANCELLED

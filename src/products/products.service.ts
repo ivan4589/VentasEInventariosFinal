@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -22,7 +27,7 @@ export class ProductsService {
         subCategory: true,
       },
     });
-    return products.map(p => this.toResponse(p));
+    return products.map((p) => this.toResponse(p));
   }
 
   async findOne(id: string): Promise<ProductResponseDto> {
@@ -34,7 +39,8 @@ export class ProductsService {
         subCategory: true,
       },
     });
-    if (!product) throw new NotFoundException(`Producto con ID ${id} no encontrado`);
+    if (!product)
+      throw new NotFoundException(`Producto con ID ${id} no encontrado`);
     return this.toResponse(product);
   }
 
@@ -53,7 +59,7 @@ export class ProductsService {
         subCategory: true,
       },
     });
-    return products.map(p => this.toResponse(p));
+    return products.map((p) => this.toResponse(p));
   }
 
   // Filtrar por categoría
@@ -66,7 +72,7 @@ export class ProductsService {
         subCategory: true,
       },
     });
-    return products.map(p => this.toResponse(p));
+    return products.map((p) => this.toResponse(p));
   }
 
   // Filtrar por proveedor
@@ -79,10 +85,12 @@ export class ProductsService {
         subCategory: true,
       },
     });
-    return products.map(p => this.toResponse(p));
+    return products.map((p) => this.toResponse(p));
   }
 
-  async create(createProductDto: CreateProductDto): Promise<ProductResponseDto> {
+  async create(
+    createProductDto: CreateProductDto,
+  ): Promise<ProductResponseDto> {
     // Validar que el proveedor existe
     const provider = await this.prisma.provider.findUnique({
       where: { id: createProductDto.providerId },
@@ -100,7 +108,8 @@ export class ProductsService {
       const subCategory = await this.prisma.subCategory.findUnique({
         where: { id: createProductDto.subCategoryId },
       });
-      if (!subCategory) throw new NotFoundException('Subcategoría no encontrada');
+      if (!subCategory)
+        throw new NotFoundException('Subcategoría no encontrada');
     }
 
     // Verificar que no exista un producto con el mismo nombre (opcional, pero recomendado)
@@ -108,7 +117,9 @@ export class ProductsService {
       where: { name: createProductDto.name },
     });
     if (existing) {
-      throw new ConflictException(`Ya existe un producto con el nombre "${createProductDto.name}"`);
+      throw new ConflictException(
+        `Ya existe un producto con el nombre "${createProductDto.name}"`,
+      );
     }
 
     // Si no se proporciona stock, por defecto 0
@@ -142,9 +153,13 @@ export class ProductsService {
     return this.toResponse(product);
   }
 
-  async update(id: string, updateProductDto: UpdateProductDto): Promise<ProductResponseDto> {
+  async update(
+    id: string,
+    updateProductDto: UpdateProductDto,
+  ): Promise<ProductResponseDto> {
     const product = await this.prisma.product.findUnique({ where: { id } });
-    if (!product) throw new NotFoundException(`Producto con ID ${id} no encontrado`);
+    if (!product)
+      throw new NotFoundException(`Producto con ID ${id} no encontrado`);
 
     // Validar relaciones si se actualizan
     if (updateProductDto.providerId) {
@@ -165,7 +180,8 @@ export class ProductsService {
       const subCategory = await this.prisma.subCategory.findUnique({
         where: { id: updateProductDto.subCategoryId },
       });
-      if (!subCategory) throw new NotFoundException('Subcategoría no encontrada');
+      if (!subCategory)
+        throw new NotFoundException('Subcategoría no encontrada');
     }
 
     // Si se actualiza el nombre, verificar que no exista otro producto con el mismo nombre
@@ -177,7 +193,9 @@ export class ProductsService {
         },
       });
       if (existing) {
-        throw new ConflictException(`Ya existe un producto con el nombre "${updateProductDto.name}"`);
+        throw new ConflictException(
+          `Ya existe un producto con el nombre "${updateProductDto.name}"`,
+        );
       }
     }
 
@@ -207,11 +225,23 @@ export class ProductsService {
     return this.toResponse(updated);
   }
 
-    async remove(id: string) {
-    const product = await this.prisma.product.findUnique({ where: { id } });
+  async remove(id: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: {
+        saleDetails: true,
+        purchaseDetails: true,
+      },
+    });
 
     if (!product) {
       throw new NotFoundException(`Producto con ID ${id} no encontrado`);
+    }
+
+    if (product.saleDetails.length > 0 || product.purchaseDetails.length > 0) {
+      throw new BadRequestException(
+        'No se puede eliminar este producto porque ya tiene ventas o compras registradas. Puedes mantenerlo en stock 0 o editar sus datos.',
+      );
     }
 
     await this.prisma.product.delete({
@@ -234,7 +264,9 @@ export class ProductsService {
     }
 
     if (newPurchasePrice < 0) {
-      throw new BadRequestException('El precio de compra no puede ser negativo');
+      throw new BadRequestException(
+        'El precio de compra no puede ser negativo',
+      );
     }
 
     if (product.purchasePrice <= 0) {

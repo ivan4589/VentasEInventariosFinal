@@ -14,16 +14,33 @@ export class ReportsService {
     private readonly reportHistoryService: ReportHistoryService,
   ) {}
 
-  async generatePurchasePDF(purchaseId: string): Promise<string> {
-    const purchase = await this.prisma.purchase.findUnique({
-      where: { id: purchaseId },
+  private escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+  async generatePurchasePDF(
+  purchaseId: string,
+): Promise<string> {
+  const purchase =
+    await this.prisma.purchase.findUnique({
+      where: {
+        id: purchaseId,
+      },
       include: {
-        provider: true,
-        user: true,
-        details: {
+        providerGroups: {
+          where: {
+            status:
+              $Enums.PurchaseProviderStatus.RECEIVED,
+          },
           include: {
-            product: {
+            provider: true,
+            details: {
               include: {
+                product: true,
                 category: true,
               },
             },
@@ -32,59 +49,264 @@ export class ReportsService {
       },
     });
 
-    if (!purchase) {
-      throw new NotFoundException('Compra no encontrada');
+  if (!purchase) {
+    throw new NotFoundException(
+      'Compra no encontrada',
+    );
+  }
+
+  if (
+    purchase.status !==
+    $Enums.PurchaseStatus.RECEIVED
+  ) {
+    throw new NotFoundException(
+      'El comprobante solo se genera cuando la compra está recibida',
+    );
+  }
+
+  const providerGroups = [
+    ...purchase.providerGroups,
+  ].sort((a, b) =>
+    a.provider.companyName.localeCompare(
+      b.provider.companyName,
+    ),
+  );
+
+  let providersHtml = '';
+  let generalTotal = 0;
+
+  for (const providerGroup of providerGroups) {
+    const categoryMap = new Map<
+      string,
+      {
+        name: string;
+        details: typeof providerGroup.details;
+        subtotal: number;
+      }
+    >();
+
+    for (const detail of providerGroup.details) {
+      const categoryId = detail.categoryId;
+      const categoryName =
+        detail.category?.name || 'Sin categoría';
+
+      const current = categoryMap.get(categoryId);
+
+      if (current) {
+        current.details.push(detail);
+        current.subtotal += detail.subtotal;
+      } else {
+        categoryMap.set(categoryId, {
+          name: categoryName,
+          details: [detail],
+          subtotal: detail.subtotal,
+        });
+      }
     }
 
     let rows = '';
+    let providerTotal = 0;
 
-    for (const detail of purchase.details) {
+    const categories = Array.from(
+      categoryMap.values(),
+    ).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+
+    for (const category of categories) {
+      const sortedDetails = [
+        ...category.details,
+      ].sort((a, b) =>
+        a.product.name.localeCompare(
+          b.product.name,
+        ),
+      );
+
+      for (const detail of sortedDetails) {
+        rows += `
+          <tr>
+            <td>${this.escapeHtml(detail.product.name)}</td>
+            <td>${this.escapeHtml(category.name)}</td>
+            <td class="number">${detail.quantity}</td>
+            <td class="number">${detail.unitPrice.toFixed(2)}</td>
+            <td class="number">${detail.subtotal.toFixed(2)}</td>
+          </tr>
+        `;
+      }
+
+      providerTotal += category.subtotal;
+
       rows += `
-        <tr>
-          <td>${detail.product.name}</td>
-          <td>${detail.product.category?.name || '-'}</td>
-          <td style="text-align:center;">${detail.quantity}</td>
-          <td style="text-align:right;">${detail.unitPrice.toFixed(2)}</td>
-          <td style="text-align:right;">${detail.subtotal.toFixed(2)}</td>
+        <tr class="category-total">
+          <td colspan="4">
+            Subtotal categoría ${this.escapeHtml(category.name)}
+          </td>
+          <td class="number">
+            ${category.subtotal.toFixed(2)}
+          </td>
         </tr>
       `;
     }
 
-    const html = this.buildDocumentHTML(
-      'COMPROBANTE DE COMPRA',
-      `
-        <p><strong>Proveedor:</strong> ${purchase.provider.companyName}</p>
-        <p><strong>Registrado por:</strong> ${purchase.user.name}</p>
-        <p><strong>Fecha:</strong> ${new Date(purchase.date).toLocaleString('es-BO')}</p>
-        ${
-          purchase.observations
-            ? `<p><strong>Observaciones:</strong> ${purchase.observations}</p>`
-            : ''
-        }
-      `,
-      `
+    generalTotal += providerTotal;
+
+    providersHtml += `
+      <section class="provider-section">
+        <div class="provider-title">
+          Proveedor: ${this.escapeHtml(
+            providerGroup.provider.companyName,
+          )}
+        </div>
+
         <table>
           <thead>
             <tr>
               <th>Producto</th>
               <th>Categoría</th>
               <th>Cantidad</th>
-              <th>Precio Unit.</th>
+              <th>Precio unitario</th>
               <th>Subtotal</th>
             </tr>
           </thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div class="total">TOTAL: ${purchase.total.toFixed(2)} Bs.</div>
-      `,
-    );
 
-    return this.generatePDF(
-      html,
-      `compra-${purchase.id}-${new Date().toISOString().slice(0, 10)}`,
-      'purchases',
-    );
+          <tbody>
+            ${rows}
+
+            <tr class="provider-total">
+              <td colspan="4">
+                Total proveedor:
+                ${this.escapeHtml(
+                  providerGroup.provider.companyName,
+                )}
+              </td>
+              <td class="number">
+                ${providerTotal.toFixed(2)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    `;
   }
+
+  const purchaseDate = new Date(
+    purchase.date,
+  ).toLocaleDateString('es-BO');
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="es">
+      <head>
+        <meta charset="UTF-8" />
+
+        <style>
+          * {
+            box-sizing: border-box;
+          }
+
+          body {
+            font-family: Arial, sans-serif;
+            padding: 28px;
+            color: #111;
+            font-size: 12px;
+          }
+
+          .document-header {
+            text-align: center;
+            margin-bottom: 35px;
+          }
+
+          .document-header h1 {
+            margin: 0 0 8px;
+            font-size: 22px;
+          }
+
+          .document-header p {
+            margin: 0;
+            font-size: 14px;
+          }
+
+          .provider-section {
+            margin-bottom: 30px;
+            page-break-inside: avoid;
+          }
+
+          .provider-title {
+            border: 1px solid #222;
+            border-bottom: 0;
+            padding: 9px;
+            font-size: 15px;
+            font-weight: bold;
+          }
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+
+          th,
+          td {
+            border: 1px solid #222;
+            padding: 8px;
+          }
+
+          th {
+            text-align: left;
+            background: #f2f2f2;
+          }
+
+          .number {
+            text-align: right;
+            white-space: nowrap;
+          }
+
+          .category-total td {
+            font-weight: bold;
+            background: #fafafa;
+          }
+
+          .category-total td:first-child,
+          .provider-total td:first-child {
+            text-align: right;
+          }
+
+          .provider-total td {
+            font-weight: bold;
+            font-size: 13px;
+            background: #eeeeee;
+          }
+
+          .general-total {
+            margin-top: 20px;
+            text-align: right;
+            font-size: 17px;
+            font-weight: bold;
+          }
+        </style>
+      </head>
+
+      <body>
+        <header class="document-header">
+          <h1>COMPROBANTE DE COMPRAS</h1>
+          <p>Fecha: ${purchaseDate}</p>
+        </header>
+
+        ${providersHtml}
+
+        <div class="general-total">
+          TOTAL GENERAL DE LA COMPRA:
+          ${generalTotal.toFixed(2)} Bs.
+        </div>
+      </body>
+    </html>
+  `;
+
+  return this.generatePDF(
+    html,
+    `comprobante-compra-${purchase.id}`,
+    'purchases',
+  );
+}
 
   async generateSalePDF(saleId: string): Promise<string> {
     const sale = await this.prisma.sale.findUnique({
