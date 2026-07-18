@@ -141,6 +141,7 @@ export class SalesService {
         userId,
         status: $Enums.SaleStatus.PENDING,
         paymentStatus,
+        subtotal,
         total,
         discount,
         observations,
@@ -324,6 +325,7 @@ export class SalesService {
     const { details, discount, observations } = updateSaleDto;
 
     let total = sale.total;
+    let subtotal = sale.subtotal;
     const finalDiscount = discount !== undefined ? discount : sale.discount;
 
     if (finalDiscount < 0) {
@@ -362,7 +364,7 @@ export class SalesService {
         subtotal: detail.quantity * detail.unitPrice,
       }));
 
-      const subtotal = newDetails.reduce(
+      subtotal = newDetails.reduce(
         (sum, detail) => sum + detail.subtotal,
         0,
       );
@@ -390,6 +392,7 @@ export class SalesService {
       });
 
       total = (currentSubtotal._sum.subtotal || 0) - finalDiscount;
+      subtotal = currentSubtotal._sum.subtotal || 0;
 
       if (total < 0) {
         throw new BadRequestException('El total no puede ser negativo');
@@ -404,6 +407,7 @@ export class SalesService {
         discount: finalDiscount,
         observations:
           observations !== undefined ? observations : sale.observations,
+        subtotal,
         total,
       },
       include: {
