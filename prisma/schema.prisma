@@ -239,7 +239,7 @@ model Sale {
 
   dueDate DateTime?
 
-  subtotal Float
+  subtotal Float @default(0)
   discount Float @default(0)
   total    Float
 
