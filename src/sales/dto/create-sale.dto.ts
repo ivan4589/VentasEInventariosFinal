@@ -1,5 +1,7 @@
 import {
+  ArrayMinSize,
   IsArray,
+  IsDateString,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -18,21 +20,39 @@ export class CreateSaleDto {
   clientId: string;
 
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => SaleDetailDto)
   details: SaleDetailDto[];
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
-  @Type(() => Number)
   discount?: number;
 
   @IsOptional()
   @IsString()
   observations?: string;
 
-  @IsEnum($Enums.PaymentStatus)
-  @IsNotEmpty()
-  paymentStatus: $Enums.PaymentStatus;
+  @IsEnum($Enums.SaleType)
+  saleType: $Enums.SaleType;
+
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  initialPayment?: number;
+
+  @IsOptional()
+  @IsEnum($Enums.PaymentMethod)
+  paymentMethod?: $Enums.PaymentMethod;
+
+  @IsOptional()
+  @IsString()
+  paymentReference?: string;
 }
