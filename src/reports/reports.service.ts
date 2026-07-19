@@ -308,7 +308,10 @@ export class ReportsService {
   );
 }
 
-  async generateSalePDF(saleId: string): Promise<string> {
+  async generateSalePDF(
+    saleId: string,
+    isCancelled = false,
+  ): Promise<string> {
     const sale = await this.prisma.sale.findUnique({
       where: { id: saleId },
       include: {
@@ -344,8 +347,13 @@ export class ReportsService {
     }
 
     const html = this.buildDocumentHTML(
-      'NOTA DE VENTA',
+      isCancelled ? 'NOTA DE VENTA ANULADA' : 'NOTA DE VENTA',
       `
+        ${
+          isCancelled
+            ? '<p style="color:#b91c1c;font-size:18px;font-weight:bold;">VENTA ANULADA</p>'
+            : ''
+        }
         <p><strong>N° Venta:</strong> ${sale.saleNumber}</p>
         <p><strong>Cliente:</strong> ${sale.client.fullName}</p>
         <p><strong>Localidad:</strong> ${sale.client.location?.name || '-'}</p>
@@ -369,7 +377,11 @@ export class ReportsService {
       `,
     );
 
-    return this.generatePDF(html, `venta-${sale.saleNumber}`, 'sales');
+    const fileName = isCancelled
+      ? `venta-anulada-${sale.saleNumber}`
+      : `venta-${sale.saleNumber}`;
+
+    return this.generatePDF(html, fileName, 'sales');
   }
 
   async getInventoryGeneral() {

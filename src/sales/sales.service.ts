@@ -953,6 +953,22 @@ export class SalesService {
     dto: CreateSaleReturnDto,
     userId: number,
   ) {
+    const saleDetailIds = dto.details.map(
+      (detail) => detail.saleDetailId,
+    );
+
+    const duplicatedSaleDetailId =
+      saleDetailIds.find(
+        (id, index) =>
+          saleDetailIds.indexOf(id) !== index,
+      );
+
+    if (duplicatedSaleDetailId) {
+      throw new BadRequestException(
+        'No se puede repetir el mismo producto en una devolución',
+      );
+    }
+
     const sale =
       await this.prisma.sale.findUnique({
         where: {
