@@ -1,17 +1,57 @@
-import { IsNumber, IsPositive, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
+import { $Enums } from '../../../generated/prisma/client';
+import { SaleDetailDto } from './sale-detail.dto';
 
-export class SaleDetailDto {
+export class CreateSaleDto {
   @IsString()
-  productId: string;
+  @IsNotEmpty()
+  clientId: string;
 
-  @IsNumber()
-  @IsPositive()
-  @Type(() => Number)
-  quantity: number;
+  @IsArray()
+  @IsNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => SaleDetailDto)
+  details: SaleDetailDto[];
 
-  @IsNumber()
-  @IsPositive()
+  @IsOptional()
   @Type(() => Number)
-  unitPrice: number;
+  @IsNumber()
+  @Min(0)
+  discount?: number;
+
+  @IsOptional()
+  @IsString()
+  observations?: string;
+
+  @IsEnum($Enums.SaleType)
+  saleType: $Enums.SaleType;
+
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  initialPayment?: number;
+
+  @IsOptional()
+  @IsEnum($Enums.PaymentMethod)
+  paymentMethod?: $Enums.PaymentMethod;
+
+  @IsOptional()
+  @IsString()
+  paymentReference?: string;
 }

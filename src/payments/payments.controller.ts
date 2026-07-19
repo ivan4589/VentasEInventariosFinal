@@ -74,13 +74,13 @@ export class PaymentsController {
   }
 
   @Post()
-  @Roles($Enums.Role.ADMIN, $Enums.Role.COBRADOR)
+  @Roles($Enums.Role.ADMIN,  $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   create(@Body() createPaymentDto: CreatePaymentDto, @Request() req) {
     return this.paymentsService.create(createPaymentDto, req.user.id);
   }
 
   @Patch(':id')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.COBRADOR)
+  @Roles($Enums.Role.ADMIN,  $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   update(
     @Param('id') id: string,
     @Body() updatePaymentDto: UpdatePaymentDto,
@@ -89,7 +89,7 @@ export class PaymentsController {
   }
 
   @Delete(':id')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.COBRADOR)
+  @Roles($Enums.Role.ADMIN,  $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   remove(@Param('id') id: string) {
     return this.paymentsService.remove(id);
   }
