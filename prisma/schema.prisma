@@ -201,6 +201,13 @@ model PurchaseDetail {
   unitPrice Float
   subtotal  Float
 
+  pricingConfigured    Boolean @default(false)
+  priceNormal          Float?
+  priceCamino          Float?
+  priceEspecial        Float?
+  priceMayorista       Float?
+  minQuantityWholesale Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

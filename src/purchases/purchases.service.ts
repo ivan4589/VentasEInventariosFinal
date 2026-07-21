@@ -17,6 +17,12 @@ interface PreparedDetail {
   quantity: number;
   unitPrice: number;
   subtotal: number;
+  pricingConfigured: boolean;
+  priceNormal: number;
+  priceCamino: number;
+  priceEspecial: number;
+  priceMayorista: number | null;
+  minQuantityWholesale: number | null;
 }
 
 interface PreparedProviderGroup {
@@ -53,6 +59,19 @@ export class PurchasesService {
     return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 
+  private calculateMarkup(
+    purchasePrice: number,
+    salePrice: number,
+  ): number {
+    if (purchasePrice <= 0) {
+      return 0;
+    }
+
+    return this.roundMoney(
+      (salePrice / purchasePrice - 1) * 100,
+    );
+  }
+
   private toResponse(purchase: any): PurchaseResponseDto {
     return {
       id: purchase.id,
@@ -84,6 +103,12 @@ export class PurchasesService {
             quantity: detail.quantity,
             unitPrice: detail.unitPrice,
             subtotal: detail.subtotal,
+            priceNormal: detail.priceNormal,
+            priceCamino: detail.priceCamino,
+            priceEspecial: detail.priceEspecial,
+            priceMayorista: detail.priceMayorista,
+            minQuantityWholesale:
+              detail.minQuantityWholesale,
           })),
         })),
       createdAt: purchase.createdAt,
@@ -126,7 +151,7 @@ export class PurchasesService {
 
     if (products.length !== productIds.length) {
       throw new BadRequestException(
-        'Uno o más productos no existen',
+        'Uno o mÃ¡s productos no existen',
       );
     }
 
@@ -149,6 +174,22 @@ export class PurchasesService {
         detail.quantity * detail.unitPrice,
       );
 
+      const hasWholesalePrice =
+        detail.priceMayorista !== null &&
+        detail.priceMayorista !== undefined;
+
+      const hasWholesaleMinimum =
+        detail.minQuantityWholesale !== null &&
+        detail.minQuantityWholesale !== undefined;
+
+      if (
+        hasWholesalePrice !== hasWholesaleMinimum
+      ) {
+        throw new BadRequestException(
+          `El producto "${product.name}" debe tener precio y cantidad mÃ­nima mayorista, o dejar ambos vacÃ­os`,
+        );
+      }
+
       const preparedDetail: PreparedDetail = {
         productId: product.id,
         providerId: product.providerId,
@@ -156,6 +197,25 @@ export class PurchasesService {
         quantity: detail.quantity,
         unitPrice: this.roundMoney(detail.unitPrice),
         subtotal,
+        pricingConfigured: true,
+        priceNormal: this.roundMoney(
+          detail.priceNormal,
+        ),
+        priceCamino: this.roundMoney(
+          detail.priceCamino,
+        ),
+        priceEspecial: this.roundMoney(
+          detail.priceEspecial,
+        ),
+        priceMayorista: hasWholesalePrice
+          ? this.roundMoney(
+              detail.priceMayorista!,
+            )
+          : null,
+        minQuantityWholesale:
+          hasWholesaleMinimum
+            ? detail.minQuantityWholesale!
+            : null,
       };
 
       const existingGroup = groupMap.get(product.providerId);
@@ -305,6 +365,16 @@ export class PurchasesService {
                 quantity: detail.quantity,
                 unitPrice: detail.unitPrice,
                 subtotal: detail.subtotal,
+                pricingConfigured:
+                  detail.pricingConfigured,
+                priceNormal: detail.priceNormal,
+                priceCamino: detail.priceCamino,
+                priceEspecial:
+                  detail.priceEspecial,
+                priceMayorista:
+                  detail.priceMayorista,
+                minQuantityWholesale:
+                  detail.minQuantityWholesale,
               })),
             },
           })),
@@ -347,7 +417,7 @@ export class PurchasesService {
       !allGroupsArePending
     ) {
       throw new BadRequestException(
-        'La compra solo se puede editar antes de recibir o anular algún proveedor',
+        'La compra solo se puede editar antes de recibir o anular algÃºn proveedor',
       );
     }
 
@@ -405,6 +475,18 @@ export class PurchasesService {
                     quantity: detail.quantity,
                     unitPrice: detail.unitPrice,
                     subtotal: detail.subtotal,
+                    pricingConfigured:
+                      detail.pricingConfigured,
+                    priceNormal:
+                      detail.priceNormal,
+                    priceCamino:
+                      detail.priceCamino,
+                    priceEspecial:
+                      detail.priceEspecial,
+                    priceMayorista:
+                      detail.priceMayorista,
+                    minQuantityWholesale:
+                      detail.minQuantityWholesale,
                   })),
                 },
               })),
@@ -451,7 +533,7 @@ export class PurchasesService {
           $Enums.PurchaseStatus.CANCELLED
         ) {
           throw new BadRequestException(
-            'La compra está anulada',
+            'La compra estÃ¡ anulada',
           );
         }
 
@@ -475,27 +557,80 @@ export class PurchasesService {
               increment: detail.quantity,
             },
             purchasePrice: newPurchasePrice,
-
-            // Se recalculan tanto si el precio sube como si baja.
-            priceNormal: this.roundMoney(
-              newPurchasePrice *
-                (1 + product.markupNormal / 100),
-            ),
-            priceCamino: this.roundMoney(
-              newPurchasePrice *
-                (1 + product.markupCamino / 100),
-            ),
-            priceEspecial: this.roundMoney(
-              newPurchasePrice *
-                (1 + product.markupEspecial / 100),
-            ),
           };
 
-          if (product.priceMayorista !== null) {
-            updateData.priceMayorista = this.roundMoney(
+          if (detail.pricingConfigured) {
+            if (
+              detail.priceNormal === null ||
+              detail.priceCamino === null ||
+              detail.priceEspecial === null
+            ) {
+              throw new BadRequestException(
+                `La configuraciÃ³n de precios para "${product.name}" estÃ¡ incompleta`,
+              );
+            }
+
+            updateData.priceNormal =
+              this.roundMoney(detail.priceNormal);
+            updateData.priceCamino =
+              this.roundMoney(detail.priceCamino);
+            updateData.priceEspecial =
+              this.roundMoney(detail.priceEspecial);
+            updateData.priceMayorista =
+              detail.priceMayorista === null
+                ? null
+                : this.roundMoney(
+                    detail.priceMayorista,
+                  );
+            updateData.minQuantityWholesale =
+              detail.minQuantityWholesale;
+            updateData.markupNormal =
+              this.calculateMarkup(
+                newPurchasePrice,
+                detail.priceNormal,
+              );
+            updateData.markupCamino =
+              this.calculateMarkup(
+                newPurchasePrice,
+                detail.priceCamino,
+              );
+            updateData.markupEspecial =
+              this.calculateMarkup(
+                newPurchasePrice,
+                detail.priceEspecial,
+              );
+
+            if (detail.priceMayorista !== null) {
+              updateData.markupMayorista =
+                this.calculateMarkup(
+                  newPurchasePrice,
+                  detail.priceMayorista,
+                );
+            }
+          } else {
+            // Compatibilidad con compras pendientes creadas antes
+            // de guardar los precios propuestos en cada detalle.
+            updateData.priceNormal = this.roundMoney(
               newPurchasePrice *
-                (1 + product.markupMayorista / 100),
+                (1 + product.markupNormal / 100),
             );
+            updateData.priceCamino = this.roundMoney(
+              newPurchasePrice *
+                (1 + product.markupCamino / 100),
+            );
+            updateData.priceEspecial = this.roundMoney(
+              newPurchasePrice *
+                (1 + product.markupEspecial / 100),
+            );
+
+            if (product.priceMayorista !== null) {
+              updateData.priceMayorista =
+                this.roundMoney(
+                  newPurchasePrice *
+                    (1 +
+                      product.markupMayorista / 100),
+                );
+            }
           }
 
           await prisma.product.update({
@@ -562,7 +697,7 @@ export class PurchasesService {
           $Enums.PurchaseProviderStatus.CANCELLED
         ) {
           throw new BadRequestException(
-            'El proveedor ya está anulado',
+            'El proveedor ya estÃ¡ anulado',
           );
         }
 
@@ -576,7 +711,7 @@ export class PurchasesService {
 
             if (newStock < 0) {
               throw new BadRequestException(
-                `No se puede anular "${detail.product.name}" porque el stock quedaría negativo`,
+                `No se puede anular "${detail.product.name}" porque el stock quedarÃ­a negativo`,
               );
             }
           }
@@ -652,7 +787,7 @@ export class PurchasesService {
         $Enums.PurchaseStatus.CANCELLED
       ) {
         throw new BadRequestException(
-          'La compra ya está anulada',
+          'La compra ya estÃ¡ anulada',
         );
       }
 
@@ -671,7 +806,7 @@ export class PurchasesService {
           0
         ) {
           throw new BadRequestException(
-            `No se puede anular la compra porque "${detail.product.name}" quedaría con stock negativo`,
+            `No se puede anular la compra porque "${detail.product.name}" quedarÃ­a con stock negativo`,
           );
         }
       }
