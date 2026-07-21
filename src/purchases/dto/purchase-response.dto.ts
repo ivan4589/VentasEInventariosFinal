@@ -9,6 +9,11 @@ export class PurchaseDetailResponseDto {
   quantity: number;
   unitPrice: number;
   subtotal: number;
+  priceNormal?: number | null;
+  priceCamino?: number | null;
+  priceEspecial?: number | null;
+  priceMayorista?: number | null;
+  minQuantityWholesale?: number | null;
 }
 
 export class PurchaseProviderResponseDto {
