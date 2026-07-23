@@ -11,10 +11,14 @@ import {
   PaymentResponseDto,
   SalePaymentStatusDto,
 } from './dto/payment-response.dto';
+import { CollectionsService } from '../collections/collections.service';
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly collectionsService: CollectionsService,
+  ) {}
 
   private toResponse(payment: any): PaymentResponseDto {
     return {
@@ -51,7 +55,10 @@ export class PaymentsService {
 
   async create(
     createPaymentDto: CreatePaymentDto,
-    userId: number,
+    actor: {
+      id: number;
+      role: $Enums.Role;
+    },
   ): Promise<PaymentResponseDto> {
     const { saleId, clientId, amount, method, reference, observations } =
       createPaymentDto;
@@ -81,8 +88,18 @@ export class PaymentsService {
     }
 
     if (sale.clientId !== clientId) {
-      throw new BadRequestException('El cliente no coincide con el de la venta');
+      throw new BadRequestException(
+        'El cliente no coincide con el de la venta',
+      );
     }
+
+    if (sale.saleType !== $Enums.SaleType.CREDIT) {
+      throw new BadRequestException(
+        'El módulo de cobranza solo registra pagos de ventas a crédito',
+      );
+    }
+
+    await this.collectionsService.assertCanCollect(saleId, actor);
 
     const alreadyPaid = sale.payments.reduce(
       (sum, payment) => sum + payment.amount,
@@ -104,7 +121,7 @@ export class PaymentsService {
         data: {
           saleId,
           clientId,
-          userId,
+          userId: actor.id,
           amount,
           method,
           reference,
