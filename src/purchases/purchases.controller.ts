@@ -21,16 +21,10 @@ import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 @Controller('purchases')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class PurchasesController {
-  constructor(
-    private readonly purchasesService: PurchasesService,
-  ) {}
+  constructor(private readonly purchasesService: PurchasesService) {}
 
   @Get()
-  @Roles(
-    $Enums.Role.ADMIN,
-    $Enums.Role.VENDEDOR,
-    $Enums.Role.COBRADOR,
-  )
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   findAll(
     @Query('status') status?: $Enums.PurchaseStatus,
     @Query('providerId') providerId?: string,
@@ -40,35 +34,21 @@ export class PurchasesController {
     return this.purchasesService.findAll({
       status,
       providerId,
-      dateFrom: dateFrom
-        ? new Date(dateFrom)
-        : undefined,
-      dateTo: dateTo
-        ? new Date(dateTo)
-        : undefined,
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
     });
   }
 
   @Get(':id')
-  @Roles(
-    $Enums.Role.ADMIN,
-    $Enums.Role.VENDEDOR,
-    $Enums.Role.COBRADOR,
-  )
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   findOne(@Param('id') id: string) {
     return this.purchasesService.findOne(id);
   }
 
   @Post()
   @Roles($Enums.Role.ADMIN)
-  create(
-    @Body() createPurchaseDto: CreatePurchaseDto,
-    @Request() req: any,
-  ) {
-    return this.purchasesService.create(
-      createPurchaseDto,
-      req.user.id,
-    );
+  create(@Body() createPurchaseDto: CreatePurchaseDto, @Request() req: any) {
+    return this.purchasesService.create(createPurchaseDto, req.user.id);
   }
 
   @Patch(':id')
@@ -77,10 +57,7 @@ export class PurchasesController {
     @Param('id') id: string,
     @Body() updatePurchaseDto: UpdatePurchaseDto,
   ) {
-    return this.purchasesService.update(
-      id,
-      updatePurchaseDto,
-    );
+    return this.purchasesService.update(id, updatePurchaseDto);
   }
 
   @Patch(':id/providers/:purchaseProviderId/receive')
@@ -89,10 +66,12 @@ export class PurchasesController {
     @Param('id') id: string,
     @Param('purchaseProviderId')
     purchaseProviderId: string,
+    @Request() req: any,
   ) {
     return this.purchasesService.receiveProvider(
       id,
       purchaseProviderId,
+      req.user.id,
     );
   }
 
@@ -102,16 +81,18 @@ export class PurchasesController {
     @Param('id') id: string,
     @Param('purchaseProviderId')
     purchaseProviderId: string,
+    @Request() req: any,
   ) {
     return this.purchasesService.cancelProvider(
       id,
       purchaseProviderId,
+      req.user.id,
     );
   }
 
   @Delete(':id')
   @Roles($Enums.Role.ADMIN)
-  cancel(@Param('id') id: string) {
-    return this.purchasesService.cancel(id);
+  cancel(@Param('id') id: string, @Request() req: any) {
+    return this.purchasesService.cancel(id, req.user.id);
   }
 }
