@@ -23,6 +23,10 @@ interface PreparedDetail {
   priceEspecial: number;
   priceMayorista: number | null;
   minQuantityWholesale: number | null;
+  warehouseDistributions: Array<{
+    warehouseId: string;
+    quantity: number;
+  }>;
 }
 
 interface PreparedProviderGroup {
@@ -48,6 +52,16 @@ export class PurchasesService {
             include: {
               product: true,
               category: true,
+              warehouseDistributions: {
+                include: {
+                  warehouse: true,
+                },
+                orderBy: {
+                  warehouse: {
+                    name: 'asc',
+                  },
+                },
+              },
             },
           },
         },
@@ -59,17 +73,16 @@ export class PurchasesService {
     return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 
-  private calculateMarkup(
-    purchasePrice: number,
-    salePrice: number,
-  ): number {
+  private roundQuantity(value: number): number {
+    return Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
+  }
+
+  private calculateMarkup(purchasePrice: number, salePrice: number): number {
     if (purchasePrice <= 0) {
       return 0;
     }
 
-    return this.roundMoney(
-      (salePrice / purchasePrice - 1) * 100,
-    );
+    return this.roundMoney((salePrice / purchasePrice - 1) * 100);
   }
 
   private toResponse(purchase: any): PurchaseResponseDto {
@@ -107,8 +120,16 @@ export class PurchasesService {
             priceCamino: detail.priceCamino,
             priceEspecial: detail.priceEspecial,
             priceMayorista: detail.priceMayorista,
-            minQuantityWholesale:
-              detail.minQuantityWholesale,
+            minQuantityWholesale: detail.minQuantityWholesale,
+            warehouseDistributions: (detail.warehouseDistributions || []).map(
+              (distribution: any) => ({
+                id: distribution.id,
+                warehouseId: distribution.warehouseId,
+                warehouseName: distribution.warehouse?.name || '',
+                warehouseCode: distribution.warehouse?.code || '',
+                quantity: distribution.quantity,
+              }),
+            ),
           })),
         })),
       createdAt: purchase.createdAt,
@@ -150,13 +171,66 @@ export class PurchasesService {
     });
 
     if (products.length !== productIds.length) {
-      throw new BadRequestException(
-        'Uno o mÃ¡s productos no existen',
-      );
+      throw new BadRequestException('Uno o mÃ¡s productos no existen');
     }
 
     const productMap = new Map(
       products.map((product) => [product.id, product]),
+    );
+
+    const requestedWarehouseIds = Array.from(
+      new Set(
+        details.flatMap((detail) =>
+          (detail.warehouseDistributions || []).map(
+            (distribution) => distribution.warehouseId,
+          ),
+        ),
+      ),
+    );
+
+    const [defaultWarehouse, requestedWarehouses] = await Promise.all([
+      this.prisma.warehouse.findFirst({
+        where: {
+          isDefault: true,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      }),
+      requestedWarehouseIds.length > 0
+        ? this.prisma.warehouse.findMany({
+            where: {
+              id: {
+                in: requestedWarehouseIds,
+              },
+              isActive: true,
+            },
+            select: {
+              id: true,
+              name: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    if (!defaultWarehouse) {
+      throw new BadRequestException(
+        'No existe un almacén predeterminado activo',
+      );
+    }
+
+    if (requestedWarehouses.length !== requestedWarehouseIds.length) {
+      throw new BadRequestException(
+        'Uno o más almacenes seleccionados no existen o están desactivados',
+      );
+    }
+
+    const warehouseMap = new Map<string, { id: string; name: string }>(
+      requestedWarehouses.map(
+        (warehouse) => [warehouse.id, warehouse] as const,
+      ),
     );
 
     const groupMap = new Map<string, PreparedProviderGroup>();
@@ -170,24 +244,68 @@ export class PurchasesService {
         );
       }
 
-      const subtotal = this.roundMoney(
-        detail.quantity * detail.unitPrice,
-      );
+      const subtotal = this.roundMoney(detail.quantity * detail.unitPrice);
 
       const hasWholesalePrice =
-        detail.priceMayorista !== null &&
-        detail.priceMayorista !== undefined;
+        detail.priceMayorista !== null && detail.priceMayorista !== undefined;
 
       const hasWholesaleMinimum =
         detail.minQuantityWholesale !== null &&
         detail.minQuantityWholesale !== undefined;
 
-      if (
-        hasWholesalePrice !== hasWholesaleMinimum
-      ) {
+      if (hasWholesalePrice !== hasWholesaleMinimum) {
         throw new BadRequestException(
           `El producto "${product.name}" debe tener precio y cantidad mÃ­nima mayorista, o dejar ambos vacÃ­os`,
         );
+      }
+
+      const requestedDistributions = detail.warehouseDistributions?.length
+        ? detail.warehouseDistributions
+        : [
+            {
+              warehouseId: defaultWarehouse.id,
+              quantity: detail.quantity,
+            },
+          ];
+
+      const distributionWarehouseIds = requestedDistributions.map(
+        (distribution) => distribution.warehouseId,
+      );
+
+      if (
+        new Set(distributionWarehouseIds).size !==
+        distributionWarehouseIds.length
+      ) {
+        throw new BadRequestException(
+          `El producto "${product.name}" tiene un almacén repetido`,
+        );
+      }
+
+      const distributedQuantity = this.roundQuantity(
+        requestedDistributions.reduce(
+          (sum, distribution) => sum + distribution.quantity,
+          0,
+        ),
+      );
+
+      if (
+        Math.abs(distributedQuantity - this.roundQuantity(detail.quantity)) >
+        0.000001
+      ) {
+        throw new BadRequestException(
+          `La distribución de "${product.name}" debe sumar exactamente ${detail.quantity}`,
+        );
+      }
+
+      for (const distribution of requestedDistributions) {
+        if (
+          distribution.warehouseId !== defaultWarehouse.id &&
+          !warehouseMap.has(distribution.warehouseId)
+        ) {
+          throw new BadRequestException(
+            `El almacén seleccionado para "${product.name}" no está disponible`,
+          );
+        }
       }
 
       const preparedDetail: PreparedDetail = {
@@ -198,33 +316,26 @@ export class PurchasesService {
         unitPrice: this.roundMoney(detail.unitPrice),
         subtotal,
         pricingConfigured: true,
-        priceNormal: this.roundMoney(
-          detail.priceNormal,
-        ),
-        priceCamino: this.roundMoney(
-          detail.priceCamino,
-        ),
-        priceEspecial: this.roundMoney(
-          detail.priceEspecial,
-        ),
+        priceNormal: this.roundMoney(detail.priceNormal),
+        priceCamino: this.roundMoney(detail.priceCamino),
+        priceEspecial: this.roundMoney(detail.priceEspecial),
         priceMayorista: hasWholesalePrice
-          ? this.roundMoney(
-              detail.priceMayorista!,
-            )
+          ? this.roundMoney(detail.priceMayorista!)
           : null,
-        minQuantityWholesale:
-          hasWholesaleMinimum
-            ? detail.minQuantityWholesale!
-            : null,
+        minQuantityWholesale: hasWholesaleMinimum
+          ? detail.minQuantityWholesale!
+          : null,
+        warehouseDistributions: requestedDistributions.map((distribution) => ({
+          warehouseId: distribution.warehouseId,
+          quantity: this.roundQuantity(distribution.quantity),
+        })),
       };
 
       const existingGroup = groupMap.get(product.providerId);
 
       if (existingGroup) {
         existingGroup.details.push(preparedDetail);
-        existingGroup.total = this.roundMoney(
-          existingGroup.total + subtotal,
-        );
+        existingGroup.total = this.roundMoney(existingGroup.total + subtotal);
       } else {
         groupMap.set(product.providerId, {
           providerId: product.providerId,
@@ -243,8 +354,7 @@ export class PurchasesService {
     }>,
   ): $Enums.PurchaseStatus {
     const hasPending = groups.some(
-      (group) =>
-        group.status === $Enums.PurchaseProviderStatus.PENDING,
+      (group) => group.status === $Enums.PurchaseProviderStatus.PENDING,
     );
 
     if (hasPending) {
@@ -252,8 +362,7 @@ export class PurchasesService {
     }
 
     const hasReceived = groups.some(
-      (group) =>
-        group.status === $Enums.PurchaseProviderStatus.RECEIVED,
+      (group) => group.status === $Enums.PurchaseProviderStatus.RECEIVED,
     );
 
     if (hasReceived) {
@@ -283,13 +392,9 @@ export class PurchasesService {
       groups
         .filter(
           (group: any) =>
-            group.status !==
-            $Enums.PurchaseProviderStatus.CANCELLED,
+            group.status !== $Enums.PurchaseProviderStatus.CANCELLED,
         )
-        .reduce(
-          (sum: number, group: any) => sum + group.total,
-          0,
-        ),
+        .reduce((sum: number, group: any) => sum + group.total, 0),
     );
 
     await prisma.purchase.update({
@@ -299,10 +404,7 @@ export class PurchasesService {
       data: {
         status,
         total: activeTotal,
-        pdfUrl:
-          status === $Enums.PurchaseStatus.CANCELLED
-            ? null
-            : undefined,
+        pdfUrl: status === $Enums.PurchaseStatus.CANCELLED ? null : undefined,
       },
     });
 
@@ -318,8 +420,7 @@ export class PurchasesService {
     }
 
     try {
-      const pdfUrl =
-        await this.reportsService.generatePurchasePDF(purchaseId);
+      const pdfUrl = await this.reportsService.generatePurchasePDF(purchaseId);
 
       await this.prisma.purchase.update({
         where: {
@@ -330,20 +431,174 @@ export class PurchasesService {
         },
       });
     } catch (error) {
-      console.error(
-        'Error generando comprobante de compra:',
-        error,
+      console.error('Error generando comprobante de compra:', error);
+    }
+  }
+
+  private async resolveDetailWarehouseDistributions(
+    prisma: any,
+    detail: any,
+  ): Promise<
+    Array<{
+      warehouseId: string;
+      quantity: number;
+      warehouse?: {
+        name: string;
+      };
+    }>
+  > {
+    if (detail.warehouseDistributions?.length) {
+      return detail.warehouseDistributions;
+    }
+
+    const defaultWarehouse = await prisma.warehouse.findFirst({
+      where: {
+        isDefault: true,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (!defaultWarehouse) {
+      throw new BadRequestException(
+        'No existe un almacén predeterminado activo',
       );
     }
+
+    return [
+      {
+        warehouseId: defaultWarehouse.id,
+        warehouse: defaultWarehouse,
+        quantity: detail.quantity,
+      },
+    ];
+  }
+
+  private async incrementWarehouseStock(
+    prisma: any,
+    params: {
+      warehouseId: string;
+      productId: string;
+      quantity: number;
+      userId: number;
+      referenceId: string;
+      observations: string;
+    },
+  ): Promise<void> {
+    const updatedStock = await prisma.warehouseStock.upsert({
+      where: {
+        warehouseId_productId: {
+          warehouseId: params.warehouseId,
+          productId: params.productId,
+        },
+      },
+      create: {
+        warehouseId: params.warehouseId,
+        productId: params.productId,
+        stock: params.quantity,
+      },
+      update: {
+        stock: {
+          increment: params.quantity,
+        },
+      },
+      select: {
+        stock: true,
+      },
+    });
+
+    const newStock = this.roundQuantity(updatedStock.stock);
+
+    await prisma.inventoryMovement.create({
+      data: {
+        warehouseId: params.warehouseId,
+        productId: params.productId,
+        userId: params.userId,
+        type: $Enums.InventoryMovementType.PURCHASE_IN,
+        quantity: params.quantity,
+        previousStock: this.roundQuantity(newStock - params.quantity),
+        newStock,
+        referenceId: params.referenceId,
+        observations: params.observations,
+      },
+    });
+  }
+
+  private async decrementWarehouseStock(
+    prisma: any,
+    params: {
+      warehouseId: string;
+      warehouseName: string;
+      productId: string;
+      productName: string;
+      quantity: number;
+      userId: number;
+      referenceId: string;
+      observations: string;
+    },
+  ): Promise<void> {
+    const currentStock = await prisma.warehouseStock.findUnique({
+      where: {
+        warehouseId_productId: {
+          warehouseId: params.warehouseId,
+          productId: params.productId,
+        },
+      },
+      select: {
+        stock: true,
+        reservedStock: true,
+      },
+    });
+
+    if (
+      !currentStock ||
+      currentStock.stock - params.quantity < currentStock.reservedStock
+    ) {
+      throw new BadRequestException(
+        `No se puede retirar ${params.quantity} de "${params.productName}" en ${params.warehouseName} porque el stock disponible es insuficiente`,
+      );
+    }
+
+    const updatedStock = await prisma.warehouseStock.update({
+      where: {
+        warehouseId_productId: {
+          warehouseId: params.warehouseId,
+          productId: params.productId,
+        },
+      },
+      data: {
+        stock: {
+          decrement: params.quantity,
+        },
+      },
+      select: {
+        stock: true,
+      },
+    });
+
+    await prisma.inventoryMovement.create({
+      data: {
+        warehouseId: params.warehouseId,
+        productId: params.productId,
+        userId: params.userId,
+        type: $Enums.InventoryMovementType.PURCHASE_CANCEL_OUT,
+        quantity: params.quantity,
+        previousStock: currentStock.stock,
+        newStock: updatedStock.stock,
+        referenceId: params.referenceId,
+        observations: params.observations,
+      },
+    });
   }
 
   async create(
     createPurchaseDto: CreatePurchaseDto,
     userId: number,
   ): Promise<PurchaseResponseDto> {
-    const groups = await this.prepareProviderGroups(
-      createPurchaseDto.details,
-    );
+    const groups = await this.prepareProviderGroups(createPurchaseDto.details);
 
     const total = this.roundMoney(
       groups.reduce((sum, group) => sum + group.total, 0),
@@ -365,16 +620,18 @@ export class PurchasesService {
                 quantity: detail.quantity,
                 unitPrice: detail.unitPrice,
                 subtotal: detail.subtotal,
-                pricingConfigured:
-                  detail.pricingConfigured,
+                pricingConfigured: detail.pricingConfigured,
                 priceNormal: detail.priceNormal,
                 priceCamino: detail.priceCamino,
-                priceEspecial:
-                  detail.priceEspecial,
-                priceMayorista:
-                  detail.priceMayorista,
-                minQuantityWholesale:
-                  detail.minQuantityWholesale,
+                priceEspecial: detail.priceEspecial,
+                priceMayorista: detail.priceMayorista,
+                minQuantityWholesale: detail.minQuantityWholesale,
+                warehouseDistributions: {
+                  create: detail.warehouseDistributions.map((distribution) => ({
+                    warehouseId: distribution.warehouseId,
+                    quantity: distribution.quantity,
+                  })),
+                },
               })),
             },
           })),
@@ -390,30 +647,25 @@ export class PurchasesService {
     id: string,
     updatePurchaseDto: UpdatePurchaseDto,
   ): Promise<PurchaseResponseDto> {
-    const currentPurchase =
-      await this.prisma.purchase.findUnique({
-        where: {
-          id,
-        },
-        include: {
-          providerGroups: true,
-        },
-      });
+    const currentPurchase = await this.prisma.purchase.findUnique({
+      where: {
+        id,
+      },
+      include: {
+        providerGroups: true,
+      },
+    });
 
     if (!currentPurchase) {
       throw new NotFoundException('Compra no encontrada');
     }
 
-    const allGroupsArePending =
-      currentPurchase.providerGroups.every(
-        (group) =>
-          group.status ===
-          $Enums.PurchaseProviderStatus.PENDING,
-      );
+    const allGroupsArePending = currentPurchase.providerGroups.every(
+      (group) => group.status === $Enums.PurchaseProviderStatus.PENDING,
+    );
 
     if (
-      currentPurchase.status !==
-        $Enums.PurchaseStatus.PENDING ||
+      currentPurchase.status !== $Enums.PurchaseStatus.PENDING ||
       !allGroupsArePending
     ) {
       throw new BadRequestException(
@@ -438,64 +690,62 @@ export class PurchasesService {
       return this.toResponse(updated);
     }
 
-    const groups = await this.prepareProviderGroups(
-      updatePurchaseDto.details,
-    );
+    const groups = await this.prepareProviderGroups(updatePurchaseDto.details);
 
     const total = this.roundMoney(
       groups.reduce((sum, group) => sum + group.total, 0),
     );
 
-    const updated = await this.prisma.$transaction(
-      async (prisma) => {
-        await prisma.purchaseProvider.deleteMany({
-          where: {
-            purchaseId: id,
-          },
-        });
+    const updated = await this.prisma.$transaction(async (prisma) => {
+      await prisma.purchaseProvider.deleteMany({
+        where: {
+          purchaseId: id,
+        },
+      });
 
-        return prisma.purchase.update({
-          where: {
-            id,
+      return prisma.purchase.update({
+        where: {
+          id,
+        },
+        data: {
+          observations:
+            updatePurchaseDto.observations !== undefined
+              ? updatePurchaseDto.observations
+              : currentPurchase.observations,
+          total,
+          providerGroups: {
+            create: groups.map((group) => ({
+              providerId: group.providerId,
+              total: group.total,
+              details: {
+                create: group.details.map((detail) => ({
+                  productId: detail.productId,
+                  categoryId: detail.categoryId,
+                  quantity: detail.quantity,
+                  unitPrice: detail.unitPrice,
+                  subtotal: detail.subtotal,
+                  pricingConfigured: detail.pricingConfigured,
+                  priceNormal: detail.priceNormal,
+                  priceCamino: detail.priceCamino,
+                  priceEspecial: detail.priceEspecial,
+                  priceMayorista: detail.priceMayorista,
+                  minQuantityWholesale: detail.minQuantityWholesale,
+                  warehouseDistributions: {
+                    create: detail.warehouseDistributions.map(
+                      (distribution) => ({
+                        warehouseId: distribution.warehouseId,
+                        quantity: distribution.quantity,
+                      }),
+                    ),
+                  },
+                })),
+              },
+            })),
           },
-          data: {
-            observations:
-              updatePurchaseDto.observations !== undefined
-                ? updatePurchaseDto.observations
-                : currentPurchase.observations,
-            total,
-            providerGroups: {
-              create: groups.map((group) => ({
-                providerId: group.providerId,
-                total: group.total,
-                details: {
-                  create: group.details.map((detail) => ({
-                    productId: detail.productId,
-                    categoryId: detail.categoryId,
-                    quantity: detail.quantity,
-                    unitPrice: detail.unitPrice,
-                    subtotal: detail.subtotal,
-                    pricingConfigured:
-                      detail.pricingConfigured,
-                    priceNormal:
-                      detail.priceNormal,
-                    priceCamino:
-                      detail.priceCamino,
-                    priceEspecial:
-                      detail.priceEspecial,
-                    priceMayorista:
-                      detail.priceMayorista,
-                    minQuantityWholesale:
-                      detail.minQuantityWholesale,
-                  })),
-                },
-              })),
-            },
-          },
-          include: this.purchaseInclude(),
-        });
-      },
-    );
+        },
+        include: this.purchaseInclude(),
+      });
+    });
 
     return this.toResponse(updated);
   }
@@ -503,162 +753,146 @@ export class PurchasesService {
   async receiveProvider(
     purchaseId: string,
     purchaseProviderId: string,
+    userId: number,
   ): Promise<PurchaseResponseDto> {
-    const status = await this.prisma.$transaction(
-      async (prisma) => {
-        const group =
-          await prisma.purchaseProvider.findFirst({
-            where: {
-              id: purchaseProviderId,
-              purchaseId,
-            },
+    const status = await this.prisma.$transaction(async (prisma) => {
+      const group = await prisma.purchaseProvider.findFirst({
+        where: {
+          id: purchaseProviderId,
+          purchaseId,
+        },
+        include: {
+          purchase: true,
+          details: {
             include: {
-              purchase: true,
-              details: {
+              product: true,
+              warehouseDistributions: {
                 include: {
-                  product: true,
+                  warehouse: true,
                 },
               },
             },
+          },
+        },
+      });
+
+      if (!group) {
+        throw new NotFoundException('Proveedor de la compra no encontrado');
+      }
+
+      if (group.purchase.status === $Enums.PurchaseStatus.CANCELLED) {
+        throw new BadRequestException('La compra estÃ¡ anulada');
+      }
+
+      if (group.status !== $Enums.PurchaseProviderStatus.PENDING) {
+        throw new BadRequestException(
+          'Solo se pueden recibir proveedores pendientes',
+        );
+      }
+
+      for (const detail of group.details) {
+        const product = detail.product;
+        const newPurchasePrice = this.roundMoney(detail.unitPrice);
+        const warehouseDistributions =
+          await this.resolveDetailWarehouseDistributions(prisma, detail);
+
+        for (const distribution of warehouseDistributions) {
+          await this.incrementWarehouseStock(prisma, {
+            warehouseId: distribution.warehouseId,
+            productId: product.id,
+            quantity: distribution.quantity,
+            userId,
+            referenceId: group.id,
+            observations: `Recepción de compra ${purchaseId} del proveedor ${group.providerId}`,
           });
-
-        if (!group) {
-          throw new NotFoundException(
-            'Proveedor de la compra no encontrado',
-          );
         }
 
-        if (
-          group.purchase.status ===
-          $Enums.PurchaseStatus.CANCELLED
-        ) {
-          throw new BadRequestException(
-            'La compra estÃ¡ anulada',
-          );
-        }
+        const updateData: any = {
+          stock: {
+            increment: detail.quantity,
+          },
+          purchasePrice: newPurchasePrice,
+        };
 
-        if (
-          group.status !==
-          $Enums.PurchaseProviderStatus.PENDING
-        ) {
-          throw new BadRequestException(
-            'Solo se pueden recibir proveedores pendientes',
-          );
-        }
-
-        for (const detail of group.details) {
-          const product = detail.product;
-          const newPurchasePrice = this.roundMoney(
-            detail.unitPrice,
-          );
-
-          const updateData: any = {
-            stock: {
-              increment: detail.quantity,
-            },
-            purchasePrice: newPurchasePrice,
-          };
-
-          if (detail.pricingConfigured) {
-            if (
-              detail.priceNormal === null ||
-              detail.priceCamino === null ||
-              detail.priceEspecial === null
-            ) {
-              throw new BadRequestException(
-                `La configuraciÃ³n de precios para "${product.name}" estÃ¡ incompleta`,
-              );
-            }
-
-            updateData.priceNormal =
-              this.roundMoney(detail.priceNormal);
-            updateData.priceCamino =
-              this.roundMoney(detail.priceCamino);
-            updateData.priceEspecial =
-              this.roundMoney(detail.priceEspecial);
-            updateData.priceMayorista =
-              detail.priceMayorista === null
-                ? null
-                : this.roundMoney(
-                    detail.priceMayorista,
-                  );
-            updateData.minQuantityWholesale =
-              detail.minQuantityWholesale;
-            updateData.markupNormal =
-              this.calculateMarkup(
-                newPurchasePrice,
-                detail.priceNormal,
-              );
-            updateData.markupCamino =
-              this.calculateMarkup(
-                newPurchasePrice,
-                detail.priceCamino,
-              );
-            updateData.markupEspecial =
-              this.calculateMarkup(
-                newPurchasePrice,
-                detail.priceEspecial,
-              );
-
-            if (detail.priceMayorista !== null) {
-              updateData.markupMayorista =
-                this.calculateMarkup(
-                  newPurchasePrice,
-                  detail.priceMayorista,
-                );
-            }
-          } else {
-            // Compatibilidad con compras pendientes creadas antes
-            // de guardar los precios propuestos en cada detalle.
-            updateData.priceNormal = this.roundMoney(
-              newPurchasePrice *
-                (1 + product.markupNormal / 100),
+        if (detail.pricingConfigured) {
+          if (
+            detail.priceNormal === null ||
+            detail.priceCamino === null ||
+            detail.priceEspecial === null
+          ) {
+            throw new BadRequestException(
+              `La configuraciÃ³n de precios para "${product.name}" estÃ¡ incompleta`,
             );
-            updateData.priceCamino = this.roundMoney(
-              newPurchasePrice *
-                (1 + product.markupCamino / 100),
-            );
-            updateData.priceEspecial = this.roundMoney(
-              newPurchasePrice *
-                (1 + product.markupEspecial / 100),
-            );
-
-            if (product.priceMayorista !== null) {
-              updateData.priceMayorista =
-                this.roundMoney(
-                  newPurchasePrice *
-                    (1 +
-                      product.markupMayorista / 100),
-                );
-            }
           }
 
-          await prisma.product.update({
-            where: {
-              id: product.id,
-            },
-            data: updateData,
-          });
+          updateData.priceNormal = this.roundMoney(detail.priceNormal);
+          updateData.priceCamino = this.roundMoney(detail.priceCamino);
+          updateData.priceEspecial = this.roundMoney(detail.priceEspecial);
+          updateData.priceMayorista =
+            detail.priceMayorista === null
+              ? null
+              : this.roundMoney(detail.priceMayorista);
+          updateData.minQuantityWholesale = detail.minQuantityWholesale;
+          updateData.markupNormal = this.calculateMarkup(
+            newPurchasePrice,
+            detail.priceNormal,
+          );
+          updateData.markupCamino = this.calculateMarkup(
+            newPurchasePrice,
+            detail.priceCamino,
+          );
+          updateData.markupEspecial = this.calculateMarkup(
+            newPurchasePrice,
+            detail.priceEspecial,
+          );
+
+          if (detail.priceMayorista !== null) {
+            updateData.markupMayorista = this.calculateMarkup(
+              newPurchasePrice,
+              detail.priceMayorista,
+            );
+          }
+        } else {
+          // Compatibilidad con compras pendientes creadas antes
+          // de guardar los precios propuestos en cada detalle.
+          updateData.priceNormal = this.roundMoney(
+            newPurchasePrice * (1 + product.markupNormal / 100),
+          );
+          updateData.priceCamino = this.roundMoney(
+            newPurchasePrice * (1 + product.markupCamino / 100),
+          );
+          updateData.priceEspecial = this.roundMoney(
+            newPurchasePrice * (1 + product.markupEspecial / 100),
+          );
+
+          if (product.priceMayorista !== null) {
+            updateData.priceMayorista = this.roundMoney(
+              newPurchasePrice * (1 + product.markupMayorista / 100),
+            );
+          }
         }
 
-        await prisma.purchaseProvider.update({
+        await prisma.product.update({
           where: {
-            id: group.id,
+            id: product.id,
           },
-          data: {
-            status:
-              $Enums.PurchaseProviderStatus.RECEIVED,
-            receivedAt: new Date(),
-            cancelledAt: null,
-          },
+          data: updateData,
         });
+      }
 
-        return this.synchronizePurchase(
-          prisma,
-          purchaseId,
-        );
-      },
-    );
+      await prisma.purchaseProvider.update({
+        where: {
+          id: group.id,
+        },
+        data: {
+          status: $Enums.PurchaseProviderStatus.RECEIVED,
+          receivedAt: new Date(),
+          cancelledAt: null,
+        },
+      });
+
+      return this.synchronizePurchase(prisma, purchaseId);
+    });
 
     await this.generateFinalPdf(purchaseId, status);
 
@@ -668,85 +902,90 @@ export class PurchasesService {
   async cancelProvider(
     purchaseId: string,
     purchaseProviderId: string,
+    userId: number,
   ): Promise<PurchaseResponseDto> {
-    const status = await this.prisma.$transaction(
-      async (prisma) => {
-        const group =
-          await prisma.purchaseProvider.findFirst({
-            where: {
-              id: purchaseProviderId,
-              purchaseId,
-            },
+    const status = await this.prisma.$transaction(async (prisma) => {
+      const group = await prisma.purchaseProvider.findFirst({
+        where: {
+          id: purchaseProviderId,
+          purchaseId,
+        },
+        include: {
+          details: {
             include: {
-              details: {
+              product: true,
+              warehouseDistributions: {
                 include: {
-                  product: true,
+                  warehouse: true,
                 },
+              },
+            },
+          },
+        },
+      });
+
+      if (!group) {
+        throw new NotFoundException('Proveedor de la compra no encontrado');
+      }
+
+      if (group.status === $Enums.PurchaseProviderStatus.CANCELLED) {
+        throw new BadRequestException('El proveedor ya estÃ¡ anulado');
+      }
+
+      if (group.status === $Enums.PurchaseProviderStatus.RECEIVED) {
+        for (const detail of group.details) {
+          const newStock = detail.product.stock - detail.quantity;
+
+          if (newStock < 0) {
+            throw new BadRequestException(
+              `No se puede anular "${detail.product.name}" porque el stock quedarÃ­a negativo`,
+            );
+          }
+        }
+
+        for (const detail of group.details) {
+          const warehouseDistributions =
+            await this.resolveDetailWarehouseDistributions(prisma, detail);
+
+          for (const distribution of warehouseDistributions) {
+            await this.decrementWarehouseStock(prisma, {
+              warehouseId: distribution.warehouseId,
+              warehouseName:
+                distribution.warehouse?.name || distribution.warehouseId,
+              productId: detail.productId,
+              productName: detail.product.name,
+              quantity: distribution.quantity,
+              userId,
+              referenceId: group.id,
+              observations: `Anulación de recepción de compra ${purchaseId}`,
+            });
+          }
+
+          await prisma.product.update({
+            where: {
+              id: detail.productId,
+            },
+            data: {
+              stock: {
+                decrement: detail.quantity,
               },
             },
           });
-
-        if (!group) {
-          throw new NotFoundException(
-            'Proveedor de la compra no encontrado',
-          );
         }
+      }
 
-        if (
-          group.status ===
-          $Enums.PurchaseProviderStatus.CANCELLED
-        ) {
-          throw new BadRequestException(
-            'El proveedor ya estÃ¡ anulado',
-          );
-        }
+      await prisma.purchaseProvider.update({
+        where: {
+          id: group.id,
+        },
+        data: {
+          status: $Enums.PurchaseProviderStatus.CANCELLED,
+          cancelledAt: new Date(),
+        },
+      });
 
-        if (
-          group.status ===
-          $Enums.PurchaseProviderStatus.RECEIVED
-        ) {
-          for (const detail of group.details) {
-            const newStock =
-              detail.product.stock - detail.quantity;
-
-            if (newStock < 0) {
-              throw new BadRequestException(
-                `No se puede anular "${detail.product.name}" porque el stock quedarÃ­a negativo`,
-              );
-            }
-          }
-
-          for (const detail of group.details) {
-            await prisma.product.update({
-              where: {
-                id: detail.productId,
-              },
-              data: {
-                stock: {
-                  decrement: detail.quantity,
-                },
-              },
-            });
-          }
-        }
-
-        await prisma.purchaseProvider.update({
-          where: {
-            id: group.id,
-          },
-          data: {
-            status:
-              $Enums.PurchaseProviderStatus.CANCELLED,
-            cancelledAt: new Date(),
-          },
-        });
-
-        return this.synchronizePurchase(
-          prisma,
-          purchaseId,
-        );
-      },
-    );
+      return this.synchronizePurchase(prisma, purchaseId);
+    });
 
     // Si quedan proveedores recibidos y ninguno pendiente,
     // se vuelve a generar el PDF excluyendo el proveedor anulado.
@@ -755,9 +994,7 @@ export class PurchasesService {
     return this.findOne(purchaseId);
   }
 
-  async cancel(
-    id: string,
-  ): Promise<PurchaseResponseDto> {
+  async cancel(id: string, userId: number): Promise<PurchaseResponseDto> {
     await this.prisma.$transaction(async (prisma) => {
       const purchase = await prisma.purchase.findUnique({
         where: {
@@ -769,6 +1006,11 @@ export class PurchasesService {
               details: {
                 include: {
                   product: true,
+                  warehouseDistributions: {
+                    include: {
+                      warehouse: true,
+                    },
+                  },
                 },
               },
             },
@@ -777,34 +1019,21 @@ export class PurchasesService {
       });
 
       if (!purchase) {
-        throw new NotFoundException(
-          'Compra no encontrada',
-        );
+        throw new NotFoundException('Compra no encontrada');
       }
 
-      if (
-        purchase.status ===
-        $Enums.PurchaseStatus.CANCELLED
-      ) {
-        throw new BadRequestException(
-          'La compra ya estÃ¡ anulada',
-        );
+      if (purchase.status === $Enums.PurchaseStatus.CANCELLED) {
+        throw new BadRequestException('La compra ya estÃ¡ anulada');
       }
 
-      const receivedDetails =
-        purchase.providerGroups
-          .filter(
-            (group) =>
-              group.status ===
-              $Enums.PurchaseProviderStatus.RECEIVED,
-          )
-          .flatMap((group) => group.details);
+      const receivedDetails = purchase.providerGroups
+        .filter(
+          (group) => group.status === $Enums.PurchaseProviderStatus.RECEIVED,
+        )
+        .flatMap((group) => group.details);
 
       for (const detail of receivedDetails) {
-        if (
-          detail.product.stock - detail.quantity <
-          0
-        ) {
+        if (detail.product.stock - detail.quantity < 0) {
           throw new BadRequestException(
             `No se puede anular la compra porque "${detail.product.name}" quedarÃ­a con stock negativo`,
           );
@@ -812,6 +1041,23 @@ export class PurchasesService {
       }
 
       for (const detail of receivedDetails) {
+        const warehouseDistributions =
+          await this.resolveDetailWarehouseDistributions(prisma, detail);
+
+        for (const distribution of warehouseDistributions) {
+          await this.decrementWarehouseStock(prisma, {
+            warehouseId: distribution.warehouseId,
+            warehouseName:
+              distribution.warehouse?.name || distribution.warehouseId,
+            productId: detail.productId,
+            productName: detail.product.name,
+            quantity: distribution.quantity,
+            userId,
+            referenceId: detail.purchaseProviderId,
+            observations: `Anulación de la compra ${id}`,
+          });
+        }
+
         await prisma.product.update({
           where: {
             id: detail.productId,
@@ -829,8 +1075,7 @@ export class PurchasesService {
           purchaseId: id,
         },
         data: {
-          status:
-            $Enums.PurchaseProviderStatus.CANCELLED,
+          status: $Enums.PurchaseProviderStatus.CANCELLED,
           cancelledAt: new Date(),
         },
       });
@@ -882,35 +1127,27 @@ export class PurchasesService {
       }
     }
 
-    const purchases =
-      await this.prisma.purchase.findMany({
-        where,
-        include: this.purchaseInclude(),
-        orderBy: {
-          date: 'desc',
-        },
-      });
+    const purchases = await this.prisma.purchase.findMany({
+      where,
+      include: this.purchaseInclude(),
+      orderBy: {
+        date: 'desc',
+      },
+    });
 
-    return purchases.map((purchase) =>
-      this.toResponse(purchase),
-    );
+    return purchases.map((purchase) => this.toResponse(purchase));
   }
 
-  async findOne(
-    id: string,
-  ): Promise<PurchaseResponseDto> {
-    const purchase =
-      await this.prisma.purchase.findUnique({
-        where: {
-          id,
-        },
-        include: this.purchaseInclude(),
-      });
+  async findOne(id: string): Promise<PurchaseResponseDto> {
+    const purchase = await this.prisma.purchase.findUnique({
+      where: {
+        id,
+      },
+      include: this.purchaseInclude(),
+    });
 
     if (!purchase) {
-      throw new NotFoundException(
-        'Compra no encontrada',
-      );
+      throw new NotFoundException('Compra no encontrada');
     }
 
     return this.toResponse(purchase);
