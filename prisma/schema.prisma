@@ -543,6 +543,7 @@ enum WarehouseTransferStatus {
 enum InventoryMovementType {
   INITIAL_STOCK
   PURCHASE_IN
+  PURCHASE_CANCEL_OUT
   SALE_OUT
   SALE_RETURN_IN
   TRANSFER_IN
