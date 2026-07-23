@@ -80,7 +80,6 @@ export class CollectionsService {
 
   private debtWhere(actor: CollectionActor) {
     return {
-      saleType: $Enums.SaleType.CREDIT,
       status: $Enums.SaleStatus.CONFIRMED,
       paymentStatus: {
         in: [$Enums.PaymentStatus.PENDING, $Enums.PaymentStatus.PARTIALLY_PAID],
