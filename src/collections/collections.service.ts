@@ -296,12 +296,9 @@ export class CollectionsService {
       throw new NotFoundException('Responsable de cobranza no encontrado');
     }
 
-    if (
-      sale.saleType !== $Enums.SaleType.CREDIT ||
-      sale.status !== $Enums.SaleStatus.CONFIRMED
-    ) {
+    if (sale.status !== $Enums.SaleStatus.CONFIRMED) {
       throw new BadRequestException(
-        'Solo se pueden asignar ventas a crédito confirmadas',
+        'Solo se pueden asignar ventas confirmadas con saldo pendiente',
       );
     }
 
