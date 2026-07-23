@@ -28,6 +28,18 @@ describe('CollectionsService', () => {
     },
   };
 
+  const createAssignableSale = (
+    saleType: $Enums.SaleType,
+  ) => ({
+    id: `sale-${saleType.toLowerCase()}`,
+    saleNumber: `20260723-${saleType}`,
+    saleType,
+    status: $Enums.SaleStatus.CONFIRMED,
+    paymentStatus: $Enums.PaymentStatus.PENDING,
+    total: 100,
+    payments: [],
+  });
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -173,4 +185,51 @@ describe('CollectionsService', () => {
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
+
+  it.each([
+    $Enums.SaleType.CASH,
+    $Enums.SaleType.CREDIT,
+  ])(
+    'permite asignar una venta %s confirmada con saldo',
+    async (saleType) => {
+      prisma.sale.findUnique.mockResolvedValue(
+        createAssignableSale(saleType),
+      );
+      prisma.user.findUnique.mockResolvedValue({
+        id: 7,
+        name: 'Responsable',
+        role: $Enums.Role.COBRADOR,
+      });
+      prisma.collectionAssignment.upsert.mockResolvedValue({
+        id: 'assignment-1',
+        saleId: `sale-${saleType.toLowerCase()}`,
+        assignedAt: new Date('2026-07-23T12:00:00Z'),
+        assignedTo: {
+          id: 7,
+          name: 'Responsable',
+          role: $Enums.Role.COBRADOR,
+        },
+        assignedBy: {
+          id: 1,
+          name: 'Administrador',
+        },
+      });
+
+      await expect(
+        service.assign(
+          `sale-${saleType.toLowerCase()}`,
+          7,
+          {
+            id: 1,
+            role: $Enums.Role.ADMIN,
+          },
+        ),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          message:
+            'Cobranza asignada correctamente',
+        }),
+      );
+    },
+  );
 });
