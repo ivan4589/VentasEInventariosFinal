@@ -20,19 +20,21 @@ enum Role {
 }
 
 model User {
-  id          Int          @id @default(autoincrement())
-  name        String
-  email       String       @unique
-  password    String
-  role        Role         @default(VENDEDOR)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  saleReturns SaleReturn[]
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(VENDEDOR)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  purchases       Purchase[]
-  sales           Sale[]
-  payments        Payment[]
-  reportHistories ReportHistory[]
+  purchases          Purchase[]
+  sales              Sale[]
+  payments           Payment[]
+  reportHistories    ReportHistory[]
+  saleReturns        SaleReturn[]
+  warehouseTransfers WarehouseTransfer[]
+  inventoryMovements InventoryMovement[]
 }
 
 model Location {
@@ -69,12 +71,12 @@ enum ClientType {
 
 model Provider {
   id             String             @id @default(cuid())
-  companyName    String             @unique // Nombre de la empresa (ej: "Molino Andino")
-  contactName    String? // Persona responsable (ej: "Juan Carlos Apolo")
+  companyName    String             @unique
+  contactName    String?
   phone          String?
   email          String?
-  products       Product[] // Un proveedor puede tener muchos productos
-  purchaseGroups PurchaseProvider[] // Un proveedor puede tener muchas compras
+  products       Product[]
+  purchaseGroups PurchaseProvider[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -86,9 +88,9 @@ model Category {
   name            String           @unique
   subCategories   SubCategory[]
   products        Product[]
+  purchaseDetails PurchaseDetail[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
-  purchaseDetails PurchaseDetail[]
 
   @@map("categories")
 }
@@ -105,7 +107,6 @@ model SubCategory {
   @@map("sub_categories")
 }
 
-// ====== MODELOS EXISTENTES (actualizados) ======
 model Product {
   id            String       @id @default(cuid())
   name          String
@@ -124,7 +125,6 @@ model Product {
   priceEspecial        Float
   priceMayorista       Float?
   minQuantityWholesale Int?
-  saleReturnDetails    SaleReturnDetail[]
 
   markupNormal    Float @default(10)
   markupCamino    Float @default(10)
@@ -139,8 +139,12 @@ model Product {
   additionalInfo  String?
   imageUrl        String?
 
-  purchaseDetails PurchaseDetail[]
-  saleDetails     SaleDetail[]
+  purchaseDetails    PurchaseDetail[]
+  saleDetails        SaleDetail[]
+  saleReturnDetails  SaleReturnDetail[]
+  warehouseStocks    WarehouseStock[]
+  transferDetails    WarehouseTransferDetail[]
+  inventoryMovements InventoryMovement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -201,12 +205,7 @@ model PurchaseDetail {
   unitPrice Float
   subtotal  Float
 
-  pricingConfigured    Boolean @default(false)
-  priceNormal          Float?
-  priceCamino          Float?
-  priceEspecial        Float?
-  priceMayorista       Float?
-  minQuantityWholesale Int?
+  warehouseDistributions PurchaseDetailWarehouse[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -284,10 +283,10 @@ model SaleDetail {
 
   returnedQuantity Int @default(0)
 
+  returnDetails SaleReturnDetail[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  returnDetails SaleReturnDetail[]
 
   @@index([saleId])
   @@index([productId])
@@ -396,4 +395,153 @@ enum ReportType {
   INVENTORY_DETAILED
   SALES_REPORT
   COLLECTION_REPORT
+}
+
+model Warehouse {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  code        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+  isDefault   Boolean @default(false)
+
+  stocks                WarehouseStock[]
+  purchaseDistributions PurchaseDetailWarehouse[]
+  outgoingTransfers     WarehouseTransfer[]       @relation("TransferOrigin")
+  incomingTransfers     WarehouseTransfer[]       @relation("TransferDestination")
+  movements             InventoryMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("warehouses")
+}
+
+model WarehouseStock {
+  id          String @id @default(cuid())
+  warehouseId String
+  productId   String
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  stock           Float @default(0)
+  reservedStock   Float @default(0)
+  minStock        Float @default(0)
+  reserveQuantity Float @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([warehouseId, productId])
+  @@index([warehouseId])
+  @@index([productId])
+  @@map("warehouse_stocks")
+}
+
+model PurchaseDetailWarehouse {
+  id               String @id @default(cuid())
+  purchaseDetailId String
+  warehouseId      String
+  quantity         Float
+
+  purchaseDetail PurchaseDetail @relation(fields: [purchaseDetailId], references: [id], onDelete: Cascade)
+  warehouse      Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([purchaseDetailId, warehouseId])
+  @@index([purchaseDetailId])
+  @@index([warehouseId])
+  @@map("purchase_detail_warehouses")
+}
+
+model WarehouseTransfer {
+  id                     String @id @default(cuid())
+  transferNumber         String @unique
+  originWarehouseId      String
+  destinationWarehouseId String
+  userId                 Int
+
+  originWarehouse      Warehouse @relation("TransferOrigin", fields: [originWarehouseId], references: [id], onDelete: Restrict)
+  destinationWarehouse Warehouse @relation("TransferDestination", fields: [destinationWarehouseId], references: [id], onDelete: Restrict)
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  status        WarehouseTransferStatus @default(COMPLETED)
+  observations  String?
+  transferredAt DateTime                @default(now())
+  cancelledAt   DateTime?
+
+  details WarehouseTransferDetail[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([originWarehouseId])
+  @@index([destinationWarehouseId])
+  @@index([userId])
+  @@index([transferredAt])
+  @@map("warehouse_transfers")
+}
+
+model WarehouseTransferDetail {
+  id         String @id @default(cuid())
+  transferId String
+  productId  String
+  quantity   Float
+
+  transfer WarehouseTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product  Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([transferId, productId])
+  @@index([transferId])
+  @@index([productId])
+  @@map("warehouse_transfer_details")
+}
+
+model InventoryMovement {
+  id          String @id @default(cuid())
+  warehouseId String
+  productId   String
+  userId      Int?
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  type          InventoryMovementType
+  quantity      Float
+  previousStock Float
+  newStock      Float
+  referenceId   String?
+  observations  String?
+  createdAt     DateTime              @default(now())
+
+  @@index([warehouseId])
+  @@index([productId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("inventory_movements")
+}
+
+enum WarehouseTransferStatus {
+  COMPLETED
+  CANCELLED
+}
+
+enum InventoryMovementType {
+  INITIAL_STOCK
+  PURCHASE_IN
+  SALE_OUT
+  SALE_RETURN_IN
+  TRANSFER_IN
+  TRANSFER_OUT
+  TRANSFER_CANCEL_IN
+  TRANSFER_CANCEL_OUT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
 }

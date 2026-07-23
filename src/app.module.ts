@@ -17,7 +17,7 @@ import { ProvidersModule } from './providers/providers.module';
 import { CategoriesModule } from './categories/categories.module';
 import { SubCategoriesModule } from './sub-categories/sub-categories.module';
 import { DashboardModule } from './dashboard/dashboard.module';
-
+import { WarehousesModule } from './warehouses/warehouses.module';
 
 @Module({
   imports: [
@@ -39,6 +39,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     CategoriesModule,
     SubCategoriesModule,
     DashboardModule,
+    WarehousesModule,
   ],
   controllers: [AppController],
 })
