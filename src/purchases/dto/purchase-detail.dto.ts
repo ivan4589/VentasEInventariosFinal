@@ -1,12 +1,15 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsInt,
   IsNumber,
   IsOptional,
   IsPositive,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { PurchaseWarehouseDistributionDto } from './purchase-warehouse-distribution.dto';
 
 export class PurchaseDetailDto {
   @IsString()
@@ -48,4 +51,10 @@ export class PurchaseDetailDto {
   @IsInt()
   @Min(1)
   minQuantityWholesale?: number | null;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PurchaseWarehouseDistributionDto)
+  warehouseDistributions?: PurchaseWarehouseDistributionDto[];
 }
