@@ -93,12 +93,6 @@ export class PaymentsService {
       );
     }
 
-    if (sale.saleType !== $Enums.SaleType.CREDIT) {
-      throw new BadRequestException(
-        'El módulo de cobranza solo registra pagos de ventas a crédito',
-      );
-    }
-
     await this.collectionsService.assertCanCollect(saleId, actor);
 
     const alreadyPaid = sale.payments.reduce(
