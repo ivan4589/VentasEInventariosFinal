@@ -28,13 +28,15 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  purchases          Purchase[]
-  sales              Sale[]
-  payments           Payment[]
-  reportHistories    ReportHistory[]
-  saleReturns        SaleReturn[]
-  warehouseTransfers WarehouseTransfer[]
-  inventoryMovements InventoryMovement[]
+  purchases                    Purchase[]
+  sales                        Sale[]
+  payments                     Payment[]
+  reportHistories              ReportHistory[]
+  saleReturns                  SaleReturn[]
+  warehouseTransfers           WarehouseTransfer[]
+  inventoryMovements           InventoryMovement[]
+  collectionAssignments        CollectionAssignment[] @relation("CollectionAssignee")
+  collectionAssignmentsCreated CollectionAssignment[] @relation("CollectionAssignedBy")
 }
 
 model Location {
@@ -260,9 +262,10 @@ model Sale {
   pdfUrl          String?
   cancelledPdfUrl String?
 
-  details  SaleDetail[]
-  payments Payment[]
-  returns  SaleReturn[]
+  details              SaleDetail[]
+  payments             Payment[]
+  returns              SaleReturn[]
+  collectionAssignment CollectionAssignment?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -382,6 +385,24 @@ enum PaymentMethod {
   CASH
   QR
   BANK_TRANSFER
+}
+
+model CollectionAssignment {
+  id           String   @id @default(cuid())
+  saleId       String   @unique
+  assignedToId Int
+  assignedById Int
+  assignedAt   DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sale       Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  assignedTo User @relation("CollectionAssignee", fields: [assignedToId], references: [id], onDelete: Restrict)
+  assignedBy User @relation("CollectionAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@index([assignedToId])
+  @@index([assignedById])
+  @@index([assignedAt])
+  @@map("collection_assignments")
 }
 
 model ReportHistory {
