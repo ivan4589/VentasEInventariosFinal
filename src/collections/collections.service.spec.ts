@@ -50,11 +50,12 @@ describe('CollectionsService', () => {
     service = module.get(CollectionsService);
   });
 
-  it('agrupa las ventas por cliente y calcula el saldo general', async () => {
+  it('agrupa las ventas por cobrar y a crédito y calcula el saldo general', async () => {
     prisma.sale.findMany.mockResolvedValue([
       {
         id: 'sale-1',
         saleNumber: '20260723-001',
+        saleType: $Enums.SaleType.CASH,
         clientId: 'client-1',
         client: {
           id: 'client-1',
@@ -79,6 +80,7 @@ describe('CollectionsService', () => {
       {
         id: 'sale-2',
         saleNumber: '20260723-002',
+        saleType: $Enums.SaleType.CREDIT,
         clientId: 'client-1',
         client: {
           id: 'client-1',
@@ -121,6 +123,21 @@ describe('CollectionsService', () => {
     expect(result.summary.totalPaid).toBe(25);
     expect(result.summary.totalBalance).toBe(125);
     expect(result.summary.unassignedSalesCount).toBe(1);
+
+    const query = prisma.sale.findMany.mock.calls[0][0];
+
+    expect(query.where).toEqual(
+      expect.objectContaining({
+        status: $Enums.SaleStatus.CONFIRMED,
+        paymentStatus: {
+          in: [
+            $Enums.PaymentStatus.PENDING,
+            $Enums.PaymentStatus.PARTIALLY_PAID,
+          ],
+        },
+      }),
+    );
+    expect(query.where).not.toHaveProperty('saleType');
   });
 
   it('limita a cada usuario a sus propias asignaciones', async () => {
