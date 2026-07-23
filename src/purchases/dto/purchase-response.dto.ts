@@ -1,5 +1,13 @@
 import { $Enums } from '../../../generated/prisma/client';
 
+export class PurchaseWarehouseDistributionResponseDto {
+  id: string;
+  warehouseId: string;
+  warehouseName: string;
+  warehouseCode: string;
+  quantity: number;
+}
+
 export class PurchaseDetailResponseDto {
   id: string;
   productId: string;
@@ -14,6 +22,7 @@ export class PurchaseDetailResponseDto {
   priceEspecial?: number | null;
   priceMayorista?: number | null;
   minQuantityWholesale?: number | null;
+  warehouseDistributions: PurchaseWarehouseDistributionResponseDto[];
 }
 
 export class PurchaseProviderResponseDto {
