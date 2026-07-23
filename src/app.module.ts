@@ -19,6 +19,7 @@ import { SubCategoriesModule } from './sub-categories/sub-categories.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { CollectionsModule } from './collections/collections.module';
+import { WarehouseTransfersModule } from './warehouse-transfers/warehouse-transfers.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { CollectionsModule } from './collections/collections.module';
     DashboardModule,
     WarehousesModule,
     CollectionsModule,
+    WarehouseTransfersModule,
   ],
   controllers: [AppController],
 })
