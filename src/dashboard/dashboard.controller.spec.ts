@@ -1,18 +1,18 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { DashboardController } from './dashboard.controller';
+import { DashboardService } from './dashboard.service';
 
 describe('DashboardController', () => {
-  let controller: DashboardController;
+  it('delega el resumen al servicio', async () => {
+    const dashboardService = {
+      getKPI: jest.fn().mockResolvedValue({ salesToday: 100 }),
+    };
+    const controller = new DashboardController(
+      dashboardService as unknown as DashboardService,
+    );
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      controllers: [DashboardController],
-    }).compile();
-
-    controller = module.get<DashboardController>(DashboardController);
-  });
-
-  it('should be defined', () => {
-    expect(controller).toBeDefined();
+    await expect(controller.getKPI({})).resolves.toEqual({
+      salesToday: 100,
+    });
+    expect(dashboardService.getKPI).toHaveBeenCalledWith({});
   });
 });
