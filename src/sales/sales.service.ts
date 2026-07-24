@@ -134,7 +134,9 @@ export class SalesService {
     const parsedDueDate = new Date(dueDate);
 
     if (Number.isNaN(parsedDueDate.getTime())) {
-      throw new BadRequestException('La fecha de vencimiento no es válida');
+      throw new BadRequestException(
+        'La fecha de vencimiento no es válida',
+      );
     }
 
     const today = new Date();
@@ -172,22 +174,25 @@ export class SalesService {
       },
     });
 
-    return this.roundMoney(payments._sum.amount || 0);
+    return this.roundMoney(
+      payments._sum.amount || 0,
+    );
   }
 
   private async getCentralWarehouse(
     prisma: any = this.prisma,
   ): Promise<{ id: string; name: string }> {
-    const warehouse = await prisma.warehouse.findFirst({
-      where: {
-        isDefault: true,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        name: true,
-      },
-    });
+    const warehouse =
+      await prisma.warehouse.findFirst({
+        where: {
+          isDefault: true,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
 
     if (!warehouse) {
       throw new BadRequestException(
@@ -198,11 +203,14 @@ export class SalesService {
     return warehouse;
   }
 
-  private async toResponse(sale: any): Promise<SaleResponseDto> {
+  private async toResponse(
+    sale: any,
+  ): Promise<SaleResponseDto> {
     const paidAmount = Array.isArray(sale.payments)
       ? this.roundMoney(
           sale.payments.reduce(
-            (sum: number, payment: any) => sum + payment.amount,
+            (sum: number, payment: any) =>
+              sum + payment.amount,
             0,
           ),
         )
@@ -216,7 +224,8 @@ export class SalesService {
       clientName: sale.client?.fullName || '',
       clientAlias: sale.client?.alias,
       clientType: sale.client?.type,
-      clientLocation: sale.client?.location?.name || '',
+      clientLocation:
+        sale.client?.location?.name || '',
       clientPhone: sale.client?.phone,
 
       userId: sale.userId,
@@ -232,7 +241,9 @@ export class SalesService {
       discount: sale.discount,
       total: sale.total,
       paidAmount,
-      balance: this.roundMoney(Math.max(sale.total - paidAmount, 0)),
+      balance: this.roundMoney(
+        Math.max(sale.total - paidAmount, 0),
+      ),
 
       observations: sale.observations,
       pdfUrl: sale.pdfUrl,
@@ -242,11 +253,16 @@ export class SalesService {
         sale.details?.map((detail: any) => ({
           id: detail.id,
           productId: detail.productId,
-          productName: detail.product?.name || '',
-          productImageUrl: detail.product?.imageUrl,
-          presentation: detail.product?.weight || detail.product?.unit,
+          productName:
+            detail.product?.name || '',
+          productImageUrl:
+            detail.product?.imageUrl,
+          presentation:
+            detail.product?.weight ||
+            detail.product?.unit,
           quantity: detail.quantity,
-          returnedQuantity: detail.returnedQuantity,
+          returnedQuantity:
+            detail.returnedQuantity,
           unitPrice: detail.unitPrice,
           subtotal: detail.subtotal,
         })) || [],
@@ -262,13 +278,18 @@ export class SalesService {
     currentSaleId?: string,
   ) {
     if (!details?.length) {
-      throw new BadRequestException('La venta debe tener al menos un producto');
+      throw new BadRequestException(
+        'La venta debe tener al menos un producto',
+      );
     }
 
-    const productIds = details.map((detail) => detail.productId);
+    const productIds = details.map(
+      (detail) => detail.productId,
+    );
 
     const duplicatedProduct = productIds.find(
-      (id, index) => productIds.indexOf(id) !== index,
+      (id, index) =>
+        productIds.indexOf(id) !== index,
     );
 
     if (duplicatedProduct) {
@@ -294,91 +315,120 @@ export class SalesService {
     ]);
 
     if (!client) {
-      throw new NotFoundException('Cliente no encontrado');
+      throw new NotFoundException(
+        'Cliente no encontrado',
+      );
     }
 
     if (products.length !== productIds.length) {
-      throw new BadRequestException('Uno o más productos no existen');
+      throw new BadRequestException(
+        'Uno o más productos no existen',
+      );
     }
 
     const productMap = new Map(
-      products.map((product) => [product.id, product]),
+      products.map((product) => [
+        product.id,
+        product,
+      ]),
     );
 
-    const centralStocks = await this.prisma.warehouseStock.findMany({
-      where: {
-        warehouseId: centralWarehouse.id,
-        productId: {
-          in: productIds,
-        },
-      },
-      select: {
-        productId: true,
-        stock: true,
-        reservedStock: true,
-      },
-    });
-
-    const centralStockMap = new Map(
-      centralStocks.map((stock) => [stock.productId, stock]),
-    );
-
-    let previousReservations = new Map<string, number>();
-
-    if (currentSaleId) {
-      const oldDetails = await this.prisma.saleDetail.findMany({
+    const centralStocks =
+      await this.prisma.warehouseStock.findMany({
         where: {
-          saleId: currentSaleId,
+          warehouseId: centralWarehouse.id,
+          productId: {
+            in: productIds,
+          },
+        },
+        select: {
+          productId: true,
+          stock: true,
+          reservedStock: true,
         },
       });
 
+    const centralStockMap = new Map(
+      centralStocks.map((stock) => [
+        stock.productId,
+        stock,
+      ]),
+    );
+
+    let previousReservations = new Map<
+      string,
+      number
+    >();
+
+    if (currentSaleId) {
+      const oldDetails =
+        await this.prisma.saleDetail.findMany({
+          where: {
+            saleId: currentSaleId,
+          },
+        });
+
       previousReservations = new Map(
-        oldDetails.map((detail) => [detail.productId, detail.quantity]),
+        oldDetails.map((detail) => [
+          detail.productId,
+          detail.quantity,
+        ]),
       );
     }
 
-    const preparedDetails = details.map((detail) => {
-      const product = productMap.get(detail.productId);
-
-      if (!product) {
-        throw new NotFoundException(
-          `Producto ${detail.productId} no encontrado`,
+    const preparedDetails = details.map(
+      (detail) => {
+        const product = productMap.get(
+          detail.productId,
         );
-      }
 
-      const oldReserved = previousReservations.get(product.id) || 0;
+        if (!product) {
+          throw new NotFoundException(
+            `Producto ${detail.productId} no encontrado`,
+          );
+        }
 
-      const centralStock = centralStockMap.get(product.id);
+        const oldReserved =
+          previousReservations.get(product.id) || 0;
 
-      const availableStock =
-        (centralStock?.stock || 0) -
-        (centralStock?.reservedStock || 0) +
-        oldReserved;
+        const centralStock =
+          centralStockMap.get(product.id);
 
-      if (detail.quantity > availableStock) {
-        throw new BadRequestException(
-          `Stock insuficiente para "${product.name}" en ${centralWarehouse.name}. Disponible: ${availableStock}, solicitado: ${detail.quantity}`,
-        );
-      }
+        const availableStock =
+          (centralStock?.stock || 0) -
+          (centralStock?.reservedStock || 0) +
+          oldReserved;
 
-      const automaticPrice = this.getDefaultProductPrice(
-        product,
-        client.type,
-        detail.quantity,
-      );
+        if (detail.quantity > availableStock) {
+          throw new BadRequestException(
+            `Stock insuficiente para "${product.name}" en ${centralWarehouse.name}. Disponible: ${availableStock}, solicitado: ${detail.quantity}`,
+          );
+        }
 
-      const unitPrice =
-        detail.unitPrice > 0 ? detail.unitPrice : automaticPrice;
+        const automaticPrice =
+          this.getDefaultProductPrice(
+            product,
+            client.type,
+            detail.quantity,
+          );
 
-      return {
-        productId: product.id,
-        productName: product.name,
-        quantity: detail.quantity,
-        unitPrice: this.roundMoney(unitPrice),
-        subtotal: this.roundMoney(detail.quantity * unitPrice),
-        previousReserved: oldReserved,
-      };
-    });
+        const unitPrice =
+          detail.unitPrice > 0
+            ? detail.unitPrice
+            : automaticPrice;
+
+        return {
+          productId: product.id,
+          productName: product.name,
+          quantity: detail.quantity,
+          unitPrice: this.roundMoney(unitPrice),
+          subtotal: this.roundMoney(
+            detail.quantity * unitPrice,
+          ),
+          previousReserved: oldReserved,
+        };
+      },
+    );
 
     return {
       client,
@@ -404,24 +454,39 @@ export class SalesService {
     } = createSaleDto;
 
     const discount =
-      userRole === $Enums.Role.ADMIN ? createSaleDto.discount || 0 : 0;
+      userRole === $Enums.Role.ADMIN
+        ? createSaleDto.discount || 0
+        : 0;
 
-    if (userRole !== $Enums.Role.ADMIN && (createSaleDto.discount || 0) > 0) {
+    if (
+      userRole !== $Enums.Role.ADMIN &&
+      (createSaleDto.discount || 0) > 0
+    ) {
       throw new BadRequestException(
         'Solo el administrador puede aplicar descuentos',
       );
     }
 
-    const parsedDueDate = this.validateDueDate(saleType, dueDate);
+    const parsedDueDate =
+      this.validateDueDate(saleType, dueDate);
 
     const { centralWarehouse, preparedDetails } =
-      await this.validateAndPrepareDetails(clientId, details);
+      await this.validateAndPrepareDetails(
+        clientId,
+        details,
+      );
 
     const subtotal = this.roundMoney(
-      preparedDetails.reduce((sum, detail) => sum + detail.subtotal, 0),
+      preparedDetails.reduce(
+        (sum, detail) =>
+          sum + detail.subtotal,
+        0,
+      ),
     );
 
-    const total = this.roundMoney(subtotal - discount);
+    const total = this.roundMoney(
+      subtotal - discount,
+    );
 
     if (total < 0) {
       throw new BadRequestException(
@@ -435,207 +500,258 @@ export class SalesService {
       );
     }
 
-    if (initialPayment > 0 && !paymentMethod) {
+    if (
+      initialPayment > 0 &&
+      !paymentMethod
+    ) {
       throw new BadRequestException(
         'Debes seleccionar un método para el pago inicial',
       );
     }
 
-    const paymentStatus = this.calculatePaymentStatus(total, initialPayment);
+    const paymentStatus =
+      this.calculatePaymentStatus(
+        total,
+        initialPayment,
+      );
 
-    const saleNumber = await this.generateSaleNumber();
+    const saleNumber =
+      await this.generateSaleNumber();
 
-    const sale = await this.prisma.$transaction(async (prisma) => {
-      for (const detail of preparedDetails) {
-        await prisma.warehouseStock.update({
-          where: {
-            warehouseId_productId: {
-              warehouseId: centralWarehouse.id,
-              productId: detail.productId,
+    const sale = await this.prisma.$transaction(
+      async (prisma) => {
+        for (const detail of preparedDetails) {
+          await prisma.warehouseStock.update({
+            where: {
+              warehouseId_productId: {
+                warehouseId: centralWarehouse.id,
+                productId: detail.productId,
+              },
             },
-          },
-          data: {
-            reservedStock: {
-              increment: detail.quantity,
+            data: {
+              reservedStock: {
+                increment: detail.quantity,
+              },
             },
-          },
-        });
+          });
 
-        await prisma.product.update({
-          where: {
-            id: detail.productId,
-          },
-          data: {
-            reservedStock: {
-              increment: detail.quantity,
+          await prisma.product.update({
+            where: {
+              id: detail.productId,
             },
-          },
-        });
-      }
+            data: {
+              reservedStock: {
+                increment: detail.quantity,
+              },
+            },
+          });
+        }
 
-      const createdSale = await prisma.sale.create({
-        data: {
-          saleNumber,
-          clientId,
-          userId,
-          saleType,
-          dueDate: parsedDueDate,
-          status: $Enums.SaleStatus.PENDING,
-          paymentStatus,
-          subtotal,
-          discount,
-          total,
-          observations,
-          details: {
-            create: preparedDetails.map((detail) => ({
-              productId: detail.productId,
-              quantity: detail.quantity,
-              unitPrice: detail.unitPrice,
-              subtotal: detail.subtotal,
-            })),
-          },
-        },
-      });
+        const createdSale =
+          await prisma.sale.create({
+            data: {
+              saleNumber,
+              clientId,
+              userId,
+              saleType,
+              dueDate: parsedDueDate,
+              status:
+                $Enums.SaleStatus.PENDING,
+              paymentStatus,
+              subtotal,
+              discount,
+              total,
+              observations,
+              details: {
+                create: preparedDetails.map(
+                  (detail) => ({
+                    productId:
+                      detail.productId,
+                    quantity:
+                      detail.quantity,
+                    unitPrice:
+                      detail.unitPrice,
+                    subtotal:
+                      detail.subtotal,
+                  }),
+                ),
+              },
+            },
+          });
 
-      if (initialPayment > 0) {
-        await prisma.payment.create({
-          data: {
-            saleId: createdSale.id,
-            clientId,
-            userId,
-            amount: initialPayment,
-            method: paymentMethod!,
-            reference: paymentReference || null,
-            observations: 'Pago inicial registrado con la venta',
-          },
-        });
-      }
+        if (initialPayment > 0) {
+          await prisma.payment.create({
+            data: {
+              saleId: createdSale.id,
+              clientId,
+              userId,
+              amount: initialPayment,
+              method: paymentMethod!,
+              reference:
+                paymentReference || null,
+              observations:
+                'Pago inicial registrado con la venta',
+            },
+          });
+        }
 
-      return createdSale;
-    });
+        return createdSale;
+      },
+    );
 
-    if (paymentStatus === $Enums.PaymentStatus.PAID) {
+    if (
+      paymentStatus ===
+      $Enums.PaymentStatus.PAID
+    ) {
       return this.confirm(sale.id, userId);
     }
 
     return this.findOne(sale.id);
   }
 
-  async confirm(id: string, userId: number): Promise<SaleResponseDto> {
-    await this.prisma.$transaction(async (prisma) => {
-      const centralWarehouse = await this.getCentralWarehouse(prisma);
-      const sale = await prisma.sale.findUnique({
-        where: {
-          id,
-        },
-        include: {
-          details: {
-            include: {
-              product: true,
+  async confirm(
+    id: string,
+    userId: number,
+  ): Promise<SaleResponseDto> {
+    await this.prisma.$transaction(
+      async (prisma) => {
+        const centralWarehouse =
+          await this.getCentralWarehouse(prisma);
+        const sale =
+          await prisma.sale.findUnique({
+            where: {
+              id,
             },
-          },
-        },
-      });
+            include: {
+              details: {
+                include: {
+                  product: true,
+                },
+              },
+            },
+          });
 
-      if (!sale) {
-        throw new NotFoundException('Venta no encontrada');
-      }
+        if (!sale) {
+          throw new NotFoundException(
+            'Venta no encontrada',
+          );
+        }
 
-      if (sale.status !== $Enums.SaleStatus.PENDING) {
-        throw new BadRequestException(
-          'Solo se pueden confirmar ventas pendientes',
-        );
-      }
+        if (
+          sale.status !==
+          $Enums.SaleStatus.PENDING
+        ) {
+          throw new BadRequestException(
+            'Solo se pueden confirmar ventas pendientes',
+          );
+        }
 
-      for (const detail of sale.details) {
-        const centralStock = await prisma.warehouseStock.findUnique({
-          where: {
-            warehouseId_productId: {
+        for (const detail of sale.details) {
+          const centralStock =
+            await prisma.warehouseStock.findUnique({
+              where: {
+                warehouseId_productId: {
+                  warehouseId: centralWarehouse.id,
+                  productId: detail.productId,
+                },
+              },
+              select: {
+                id: true,
+                stock: true,
+                reservedStock: true,
+              },
+            });
+
+          if (
+            !centralStock ||
+            centralStock.stock <
+            detail.quantity
+          ) {
+            throw new BadRequestException(
+              `Stock insuficiente para "${detail.product.name}" en ${centralWarehouse.name}`,
+            );
+          }
+
+          if (
+            centralStock.reservedStock <
+            detail.quantity
+          ) {
+            throw new BadRequestException(
+              `La reserva de "${detail.product.name}" en ${centralWarehouse.name} es inconsistente`,
+            );
+          }
+
+          const updatedCentralStock =
+            await prisma.warehouseStock.update({
+              where: {
+                id: centralStock.id,
+              },
+              data: {
+                stock: {
+                  decrement: detail.quantity,
+                },
+                reservedStock: {
+                  decrement: detail.quantity,
+                },
+              },
+              select: {
+                stock: true,
+              },
+            });
+
+          await prisma.product.update({
+            where: {
+              id: detail.productId,
+            },
+            data: {
+              stock: {
+                decrement: detail.quantity,
+              },
+              reservedStock: {
+                decrement: detail.quantity,
+              },
+            },
+          });
+
+          await prisma.inventoryMovement.create({
+            data: {
               warehouseId: centralWarehouse.id,
               productId: detail.productId,
+              userId,
+              type: $Enums.InventoryMovementType.SALE_OUT,
+              quantity: detail.quantity,
+              previousStock: centralStock.stock,
+              newStock: updatedCentralStock.stock,
+              referenceId: sale.id,
+              observations: `Venta ${sale.saleNumber} confirmada`,
             },
-          },
-          select: {
-            id: true,
-            stock: true,
-            reservedStock: true,
-          },
-        });
-
-        if (!centralStock || centralStock.stock < detail.quantity) {
-          throw new BadRequestException(
-            `Stock insuficiente para "${detail.product.name}" en ${centralWarehouse.name}`,
-          );
+          });
         }
 
-        if (centralStock.reservedStock < detail.quantity) {
-          throw new BadRequestException(
-            `La reserva de "${detail.product.name}" en ${centralWarehouse.name} es inconsistente`,
-          );
-        }
-
-        const updatedCentralStock = await prisma.warehouseStock.update({
+        await prisma.sale.update({
           where: {
-            id: centralStock.id,
+            id,
           },
           data: {
-            stock: {
-              decrement: detail.quantity,
-            },
-            reservedStock: {
-              decrement: detail.quantity,
-            },
-          },
-          select: {
-            stock: true,
+            status:
+              $Enums.SaleStatus.CONFIRMED,
           },
         });
-
-        await prisma.product.update({
-          where: {
-            id: detail.productId,
-          },
-          data: {
-            stock: {
-              decrement: detail.quantity,
-            },
-            reservedStock: {
-              decrement: detail.quantity,
-            },
-          },
-        });
-
-        await prisma.inventoryMovement.create({
-          data: {
-            warehouseId: centralWarehouse.id,
-            productId: detail.productId,
-            userId,
-            type: $Enums.InventoryMovementType.SALE_OUT,
-            quantity: detail.quantity,
-            previousStock: centralStock.stock,
-            newStock: updatedCentralStock.stock,
-            referenceId: sale.id,
-            observations: `Venta ${sale.saleNumber} confirmada`,
-          },
-        });
-      }
-
-      await prisma.sale.update({
-        where: {
-          id,
-        },
-        data: {
-          status: $Enums.SaleStatus.CONFIRMED,
-        },
-      });
-    });
+      },
+    );
 
     let pdfUrl: string | null = null;
 
     try {
-      pdfUrl = await this.reportsService.generateSalePDF(id);
+      pdfUrl =
+        await this.reportsService.generateSalePDF(
+          id,
+        );
     } catch (error) {
-      console.error('Error generando recibo de venta:', error);
+      console.error(
+        'Error generando recibo de venta:',
+        error,
+      );
     }
 
     if (pdfUrl) {
@@ -657,20 +773,26 @@ export class SalesService {
     updateSaleDto: UpdateSaleDto,
     userRole: $Enums.Role,
   ): Promise<SaleResponseDto> {
-    const current = await this.prisma.sale.findUnique({
-      where: {
-        id,
-      },
-      include: {
-        details: true,
-      },
-    });
+    const current =
+      await this.prisma.sale.findUnique({
+        where: {
+          id,
+        },
+        include: {
+          details: true,
+        },
+      });
 
     if (!current) {
-      throw new NotFoundException('Venta no encontrada');
+      throw new NotFoundException(
+        'Venta no encontrada',
+      );
     }
 
-    if (current.status !== $Enums.SaleStatus.PENDING) {
+    if (
+      current.status !==
+      $Enums.SaleStatus.PENDING
+    ) {
       throw new BadRequestException(
         'Solo se pueden modificar ventas pendientes',
       );
@@ -679,287 +801,376 @@ export class SalesService {
     if (
       userRole !== $Enums.Role.ADMIN &&
       updateSaleDto.discount !== undefined &&
-      updateSaleDto.discount !== current.discount
+      updateSaleDto.discount !==
+        current.discount
     ) {
       throw new BadRequestException(
         'Solo el administrador puede modificar el descuento',
       );
     }
 
-    const finalClientId = updateSaleDto.clientId || current.clientId;
+    const finalClientId =
+      updateSaleDto.clientId ||
+      current.clientId;
 
-    const finalSaleType = updateSaleDto.saleType || current.saleType;
+    const finalSaleType =
+      updateSaleDto.saleType ||
+      current.saleType;
 
     const finalDueDate =
       updateSaleDto.dueDate !== undefined
-        ? this.validateDueDate(finalSaleType, updateSaleDto.dueDate)
+        ? this.validateDueDate(
+            finalSaleType,
+            updateSaleDto.dueDate,
+          )
         : current.dueDate;
 
     const finalDiscount =
-      userRole === $Enums.Role.ADMIN && updateSaleDto.discount !== undefined
+      userRole === $Enums.Role.ADMIN &&
+      updateSaleDto.discount !== undefined
         ? updateSaleDto.discount
         : current.discount;
 
     let newSubtotal = current.subtotal;
 
-    await this.prisma.$transaction(async (prisma) => {
-      if (updateSaleDto.details) {
-        const { centralWarehouse, preparedDetails } =
-          await this.validateAndPrepareDetails(
-            finalClientId,
-            updateSaleDto.details,
-            id,
+    await this.prisma.$transaction(
+      async (prisma) => {
+        if (updateSaleDto.details) {
+          const {
+            centralWarehouse,
+            preparedDetails,
+          } =
+            await this.validateAndPrepareDetails(
+              finalClientId,
+              updateSaleDto.details,
+              id,
+            );
+
+          for (const oldDetail of current.details) {
+            await prisma.warehouseStock.update({
+              where: {
+                warehouseId_productId: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    oldDetail.productId,
+                },
+              },
+              data: {
+                reservedStock: {
+                  decrement:
+                    oldDetail.quantity,
+                },
+              },
+            });
+
+            await prisma.product.update({
+              where: {
+                id: oldDetail.productId,
+              },
+              data: {
+                reservedStock: {
+                  decrement:
+                    oldDetail.quantity,
+                },
+              },
+            });
+          }
+
+          await prisma.saleDetail.deleteMany({
+            where: {
+              saleId: id,
+            },
+          });
+
+          for (const newDetail of preparedDetails) {
+            await prisma.warehouseStock.update({
+              where: {
+                warehouseId_productId: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    newDetail.productId,
+                },
+              },
+              data: {
+                reservedStock: {
+                  increment:
+                    newDetail.quantity,
+                },
+              },
+            });
+
+            await prisma.product.update({
+              where: {
+                id: newDetail.productId,
+              },
+              data: {
+                reservedStock: {
+                  increment:
+                    newDetail.quantity,
+                },
+              },
+            });
+          }
+
+          await prisma.saleDetail.createMany({
+            data: preparedDetails.map(
+              (detail) => ({
+                saleId: id,
+                productId: detail.productId,
+                quantity: detail.quantity,
+                unitPrice: detail.unitPrice,
+                subtotal: detail.subtotal,
+              }),
+            ),
+          });
+
+          newSubtotal = this.roundMoney(
+            preparedDetails.reduce(
+              (sum, detail) =>
+                sum + detail.subtotal,
+              0,
+            ),
+          );
+        }
+
+        const total = this.roundMoney(
+          newSubtotal - finalDiscount,
+        );
+
+        if (total < 0) {
+          throw new BadRequestException(
+            'El descuento no puede superar el subtotal',
+          );
+        }
+
+        const paidAmount =
+          await this.getPaidAmount(id, prisma);
+
+        const paymentStatus =
+          this.calculatePaymentStatus(
+            total,
+            paidAmount,
           );
 
-        for (const oldDetail of current.details) {
-          await prisma.warehouseStock.update({
-            where: {
-              warehouseId_productId: {
-                warehouseId: centralWarehouse.id,
-                productId: oldDetail.productId,
-              },
-            },
-            data: {
-              reservedStock: {
-                decrement: oldDetail.quantity,
-              },
-            },
-          });
-
-          await prisma.product.update({
-            where: {
-              id: oldDetail.productId,
-            },
-            data: {
-              reservedStock: {
-                decrement: oldDetail.quantity,
-              },
-            },
-          });
-        }
-
-        await prisma.saleDetail.deleteMany({
+        await prisma.sale.update({
           where: {
-            saleId: id,
+            id,
+          },
+          data: {
+            clientId: finalClientId,
+            saleType: finalSaleType,
+            dueDate: finalDueDate,
+            observations:
+              updateSaleDto.observations !==
+              undefined
+                ? updateSaleDto.observations
+                : current.observations,
+            subtotal: newSubtotal,
+            discount: finalDiscount,
+            total,
+            paymentStatus,
           },
         });
-
-        for (const newDetail of preparedDetails) {
-          await prisma.warehouseStock.update({
-            where: {
-              warehouseId_productId: {
-                warehouseId: centralWarehouse.id,
-                productId: newDetail.productId,
-              },
-            },
-            data: {
-              reservedStock: {
-                increment: newDetail.quantity,
-              },
-            },
-          });
-
-          await prisma.product.update({
-            where: {
-              id: newDetail.productId,
-            },
-            data: {
-              reservedStock: {
-                increment: newDetail.quantity,
-              },
-            },
-          });
-        }
-
-        await prisma.saleDetail.createMany({
-          data: preparedDetails.map((detail) => ({
-            saleId: id,
-            productId: detail.productId,
-            quantity: detail.quantity,
-            unitPrice: detail.unitPrice,
-            subtotal: detail.subtotal,
-          })),
-        });
-
-        newSubtotal = this.roundMoney(
-          preparedDetails.reduce((sum, detail) => sum + detail.subtotal, 0),
-        );
-      }
-
-      const total = this.roundMoney(newSubtotal - finalDiscount);
-
-      if (total < 0) {
-        throw new BadRequestException(
-          'El descuento no puede superar el subtotal',
-        );
-      }
-
-      const paidAmount = await this.getPaidAmount(id, prisma);
-
-      const paymentStatus = this.calculatePaymentStatus(total, paidAmount);
-
-      await prisma.sale.update({
-        where: {
-          id,
-        },
-        data: {
-          clientId: finalClientId,
-          saleType: finalSaleType,
-          dueDate: finalDueDate,
-          observations:
-            updateSaleDto.observations !== undefined
-              ? updateSaleDto.observations
-              : current.observations,
-          subtotal: newSubtotal,
-          discount: finalDiscount,
-          total,
-          paymentStatus,
-        },
-      });
-    });
+      },
+    );
 
     const updated = await this.findOne(id);
 
-    if (updated.paymentStatus === $Enums.PaymentStatus.PAID) {
+    if (
+      updated.paymentStatus ===
+      $Enums.PaymentStatus.PAID
+    ) {
       return this.confirm(id, updated.userId);
     }
 
     return updated;
   }
 
-  async cancel(id: string, userId: number): Promise<SaleResponseDto> {
-    const sale = await this.prisma.sale.findUnique({
-      where: {
-        id,
-      },
-      include: {
-        details: {
-          include: {
-            product: true,
-          },
-        },
-      },
-    });
-
-    if (!sale) {
-      throw new NotFoundException('Venta no encontrada');
-    }
-
-    if (sale.status === $Enums.SaleStatus.CANCELLED) {
-      throw new BadRequestException('La venta ya está anulada');
-    }
-
-    await this.prisma.$transaction(async (prisma) => {
-      const centralWarehouse = await this.getCentralWarehouse(prisma);
-
-      for (const detail of sale.details) {
-        if (sale.status === $Enums.SaleStatus.PENDING) {
-          await prisma.warehouseStock.update({
-            where: {
-              warehouseId_productId: {
-                warehouseId: centralWarehouse.id,
-                productId: detail.productId,
-              },
-            },
-            data: {
-              reservedStock: {
-                decrement: detail.quantity,
-              },
-            },
-          });
-
-          await prisma.product.update({
-            where: {
-              id: detail.productId,
-            },
-            data: {
-              reservedStock: {
-                decrement: detail.quantity,
-              },
-            },
-          });
-        }
-
-        if (sale.status === $Enums.SaleStatus.CONFIRMED) {
-          const quantityToRestore = detail.quantity - detail.returnedQuantity;
-          const centralStock = await prisma.warehouseStock.findUnique({
-            where: {
-              warehouseId_productId: {
-                warehouseId: centralWarehouse.id,
-                productId: detail.productId,
-              },
-            },
-            select: {
-              stock: true,
-            },
-          });
-          const updatedCentralStock = await prisma.warehouseStock.upsert({
-            where: {
-              warehouseId_productId: {
-                warehouseId: centralWarehouse.id,
-                productId: detail.productId,
-              },
-            },
-            create: {
-              warehouseId: centralWarehouse.id,
-              productId: detail.productId,
-              stock: quantityToRestore,
-            },
-            update: {
-              stock: {
-                increment: quantityToRestore,
-              },
-            },
-            select: {
-              stock: true,
-            },
-          });
-
-          await prisma.product.update({
-            where: {
-              id: detail.productId,
-            },
-            data: {
-              stock: {
-                increment: quantityToRestore,
-              },
-            },
-          });
-
-          if (quantityToRestore > 0) {
-            await prisma.inventoryMovement.create({
-              data: {
-                warehouseId: centralWarehouse.id,
-                productId: detail.productId,
-                userId,
-                type: $Enums.InventoryMovementType.SALE_RETURN_IN,
-                quantity: quantityToRestore,
-                previousStock: centralStock?.stock || 0,
-                newStock: updatedCentralStock.stock,
-                referenceId: sale.id,
-                observations: `Anulación de venta ${sale.saleNumber}`,
-              },
-            });
-          }
-        }
-      }
-
-      await prisma.sale.update({
+  async cancel(
+    id: string,
+    userId: number,
+  ): Promise<SaleResponseDto> {
+    const sale =
+      await this.prisma.sale.findUnique({
         where: {
           id,
         },
-        data: {
-          status: $Enums.SaleStatus.CANCELLED,
+        include: {
+          details: {
+            include: {
+              product: true,
+            },
+          },
         },
       });
-    });
+
+    if (!sale) {
+      throw new NotFoundException(
+        'Venta no encontrada',
+      );
+    }
+
+    if (
+      sale.status ===
+      $Enums.SaleStatus.CANCELLED
+    ) {
+      throw new BadRequestException(
+        'La venta ya está anulada',
+      );
+    }
+
+    await this.prisma.$transaction(
+      async (prisma) => {
+        const centralWarehouse =
+          await this.getCentralWarehouse(prisma);
+
+        for (const detail of sale.details) {
+          if (
+            sale.status ===
+            $Enums.SaleStatus.PENDING
+          ) {
+            await prisma.warehouseStock.update({
+              where: {
+                warehouseId_productId: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    detail.productId,
+                },
+              },
+              data: {
+                reservedStock: {
+                  decrement:
+                    detail.quantity,
+                },
+              },
+            });
+
+            await prisma.product.update({
+              where: {
+                id: detail.productId,
+              },
+              data: {
+                reservedStock: {
+                  decrement:
+                    detail.quantity,
+                },
+              },
+            });
+          }
+
+          if (
+            sale.status ===
+            $Enums.SaleStatus.CONFIRMED
+          ) {
+            const quantityToRestore =
+              detail.quantity -
+              detail.returnedQuantity;
+            const centralStock =
+              await prisma.warehouseStock.findUnique({
+                where: {
+                  warehouseId_productId: {
+                    warehouseId:
+                      centralWarehouse.id,
+                    productId:
+                      detail.productId,
+                  },
+                },
+                select: {
+                  stock: true,
+                },
+              });
+            const updatedCentralStock =
+              await prisma.warehouseStock.upsert({
+                where: {
+                  warehouseId_productId: {
+                    warehouseId:
+                      centralWarehouse.id,
+                    productId:
+                      detail.productId,
+                  },
+                },
+                create: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    detail.productId,
+                  stock:
+                    quantityToRestore,
+                },
+                update: {
+                  stock: {
+                    increment:
+                      quantityToRestore,
+                  },
+                },
+                select: {
+                  stock: true,
+                },
+              });
+
+            await prisma.product.update({
+              where: {
+                id: detail.productId,
+              },
+              data: {
+                stock: {
+                  increment:
+                    quantityToRestore,
+                },
+              },
+            });
+
+            if (quantityToRestore > 0) {
+              await prisma.inventoryMovement.create({
+                data: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    detail.productId,
+                  userId,
+                  type: $Enums.InventoryMovementType.SALE_RETURN_IN,
+                  quantity:
+                    quantityToRestore,
+                  previousStock:
+                    centralStock?.stock || 0,
+                  newStock:
+                    updatedCentralStock.stock,
+                  referenceId: sale.id,
+                  observations: `Anulación de venta ${sale.saleNumber}`,
+                },
+              });
+            }
+          }
+        }
+
+        await prisma.sale.update({
+          where: {
+            id,
+          },
+          data: {
+            status:
+              $Enums.SaleStatus.CANCELLED,
+          },
+        });
+      },
+    );
 
     let cancelledPdfUrl: string | null = null;
 
     try {
-      cancelledPdfUrl = await this.reportsService.generateSalePDF(id, true);
+      cancelledPdfUrl =
+        await this.reportsService.generateSalePDF(
+          id,
+          true,
+        );
     } catch (error) {
-      console.error('Error generando recibo anulado:', error);
+      console.error(
+        'Error generando recibo anulado:',
+        error,
+      );
     }
 
     if (cancelledPdfUrl) {
@@ -976,12 +1187,20 @@ export class SalesService {
     return this.findOne(id);
   }
 
-  async createReturn(saleId: string, dto: CreateSaleReturnDto, userId: number) {
-    const saleDetailIds = dto.details.map((detail) => detail.saleDetailId);
-
-    const duplicatedSaleDetailId = saleDetailIds.find(
-      (id, index) => saleDetailIds.indexOf(id) !== index,
+  async createReturn(
+    saleId: string,
+    dto: CreateSaleReturnDto,
+    userId: number,
+  ) {
+    const saleDetailIds = dto.details.map(
+      (detail) => detail.saleDetailId,
     );
+
+    const duplicatedSaleDetailId =
+      saleDetailIds.find(
+        (id, index) =>
+          saleDetailIds.indexOf(id) !== index,
+      );
 
     if (duplicatedSaleDetailId) {
       throw new BadRequestException(
@@ -989,181 +1208,245 @@ export class SalesService {
       );
     }
 
-    const sale = await this.prisma.sale.findUnique({
-      where: {
-        id: saleId,
-      },
-      include: {
-        details: {
-          include: {
-            product: true,
+    const sale =
+      await this.prisma.sale.findUnique({
+        where: {
+          id: saleId,
+        },
+        include: {
+          details: {
+            include: {
+              product: true,
+            },
           },
         },
-      },
-    });
+      });
 
     if (!sale) {
-      throw new NotFoundException('Venta no encontrada');
+      throw new NotFoundException(
+        'Venta no encontrada',
+      );
     }
 
-    if (sale.status !== $Enums.SaleStatus.CONFIRMED) {
+    if (
+      sale.status !==
+      $Enums.SaleStatus.CONFIRMED
+    ) {
       throw new BadRequestException(
         'Solo se aceptan devoluciones de ventas confirmadas',
       );
     }
 
     const detailMap = new Map(
-      sale.details.map((detail) => [detail.id, detail]),
+      sale.details.map((detail) => [
+        detail.id,
+        detail,
+      ]),
     );
 
     let returnTotal = 0;
 
-    const prepared = dto.details.map((returnDetail) => {
-      const saleDetail = detailMap.get(returnDetail.saleDetailId);
-
-      if (!saleDetail) {
-        throw new NotFoundException('Detalle de venta no encontrado');
-      }
-
-      const availableToReturn =
-        saleDetail.quantity - saleDetail.returnedQuantity;
-
-      if (returnDetail.quantity > availableToReturn) {
-        throw new BadRequestException(
-          `Solo puedes devolver ${availableToReturn} unidades de "${saleDetail.product.name}"`,
+    const prepared = dto.details.map(
+      (returnDetail) => {
+        const saleDetail = detailMap.get(
+          returnDetail.saleDetailId,
         );
-      }
 
-      const subtotal = this.roundMoney(
-        returnDetail.quantity * saleDetail.unitPrice,
+        if (!saleDetail) {
+          throw new NotFoundException(
+            'Detalle de venta no encontrado',
+          );
+        }
+
+        const availableToReturn =
+          saleDetail.quantity -
+          saleDetail.returnedQuantity;
+
+        if (
+          returnDetail.quantity >
+          availableToReturn
+        ) {
+          throw new BadRequestException(
+            `Solo puedes devolver ${availableToReturn} unidades de "${saleDetail.product.name}"`,
+          );
+        }
+
+        const subtotal = this.roundMoney(
+          returnDetail.quantity *
+            saleDetail.unitPrice,
+        );
+
+        returnTotal += subtotal;
+
+        return {
+          saleDetail,
+          quantity:
+            returnDetail.quantity,
+          subtotal,
+        };
+      },
+    );
+
+    const result =
+      await this.prisma.$transaction(
+        async (prisma) => {
+          const centralWarehouse =
+            await this.getCentralWarehouse(prisma);
+          const saleReturn =
+            await prisma.saleReturn.create({
+              data: {
+                saleId,
+                userId,
+                amount:
+                  this.roundMoney(returnTotal),
+                observations:
+                  dto.observations,
+              },
+            });
+
+          for (const item of prepared) {
+            await prisma.saleReturnDetail.create({
+              data: {
+                saleReturnId:
+                  saleReturn.id,
+                saleDetailId:
+                  item.saleDetail.id,
+                productId:
+                  item.saleDetail.productId,
+                quantity: item.quantity,
+                unitPrice:
+                  item.saleDetail.unitPrice,
+                subtotal: item.subtotal,
+              },
+            });
+
+            await prisma.saleDetail.update({
+              where: {
+                id: item.saleDetail.id,
+              },
+              data: {
+                returnedQuantity: {
+                  increment: item.quantity,
+                },
+              },
+            });
+
+            await prisma.product.update({
+              where: {
+                id:
+                  item.saleDetail.productId,
+              },
+              data: {
+                stock: {
+                  increment: item.quantity,
+                },
+              },
+            });
+
+            const centralStock =
+              await prisma.warehouseStock.findUnique({
+                where: {
+                  warehouseId_productId: {
+                    warehouseId:
+                      centralWarehouse.id,
+                    productId:
+                      item.saleDetail.productId,
+                  },
+                },
+                select: {
+                  stock: true,
+                },
+              });
+            const updatedCentralStock =
+              await prisma.warehouseStock.upsert({
+                where: {
+                  warehouseId_productId: {
+                    warehouseId:
+                      centralWarehouse.id,
+                    productId:
+                      item.saleDetail.productId,
+                  },
+                },
+                create: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    item.saleDetail.productId,
+                  stock: item.quantity,
+                },
+                update: {
+                  stock: {
+                    increment:
+                      item.quantity,
+                  },
+                },
+                select: {
+                  stock: true,
+                },
+              });
+
+            await prisma.inventoryMovement.create({
+              data: {
+                warehouseId:
+                  centralWarehouse.id,
+                productId:
+                  item.saleDetail.productId,
+                userId,
+                type: $Enums.InventoryMovementType.SALE_RETURN_IN,
+                quantity: item.quantity,
+                previousStock:
+                  centralStock?.stock || 0,
+                newStock:
+                  updatedCentralStock.stock,
+                referenceId:
+                  saleReturn.id,
+                observations: `Devolución de venta ${sale.saleNumber}`,
+              },
+            });
+          }
+
+          const newSubtotal =
+            this.roundMoney(
+              sale.subtotal -
+                returnTotal,
+            );
+
+          const newTotal = this.roundMoney(
+            Math.max(
+              newSubtotal -
+                sale.discount,
+              0,
+            ),
+          );
+
+          const paidAmount =
+            await this.getPaidAmount(
+              saleId,
+              prisma,
+            );
+
+          await prisma.sale.update({
+            where: {
+              id: saleId,
+            },
+            data: {
+              subtotal: newSubtotal,
+              total: newTotal,
+              paymentStatus:
+                this.calculatePaymentStatus(
+                  newTotal,
+                  paidAmount,
+                ),
+            },
+          });
+
+          return saleReturn;
+        },
       );
-
-      returnTotal += subtotal;
-
-      return {
-        saleDetail,
-        quantity: returnDetail.quantity,
-        subtotal,
-      };
-    });
-
-    const result = await this.prisma.$transaction(async (prisma) => {
-      const centralWarehouse = await this.getCentralWarehouse(prisma);
-      const saleReturn = await prisma.saleReturn.create({
-        data: {
-          saleId,
-          userId,
-          amount: this.roundMoney(returnTotal),
-          observations: dto.observations,
-        },
-      });
-
-      for (const item of prepared) {
-        await prisma.saleReturnDetail.create({
-          data: {
-            saleReturnId: saleReturn.id,
-            saleDetailId: item.saleDetail.id,
-            productId: item.saleDetail.productId,
-            quantity: item.quantity,
-            unitPrice: item.saleDetail.unitPrice,
-            subtotal: item.subtotal,
-          },
-        });
-
-        await prisma.saleDetail.update({
-          where: {
-            id: item.saleDetail.id,
-          },
-          data: {
-            returnedQuantity: {
-              increment: item.quantity,
-            },
-          },
-        });
-
-        await prisma.product.update({
-          where: {
-            id: item.saleDetail.productId,
-          },
-          data: {
-            stock: {
-              increment: item.quantity,
-            },
-          },
-        });
-
-        const centralStock = await prisma.warehouseStock.findUnique({
-          where: {
-            warehouseId_productId: {
-              warehouseId: centralWarehouse.id,
-              productId: item.saleDetail.productId,
-            },
-          },
-          select: {
-            stock: true,
-          },
-        });
-        const updatedCentralStock = await prisma.warehouseStock.upsert({
-          where: {
-            warehouseId_productId: {
-              warehouseId: centralWarehouse.id,
-              productId: item.saleDetail.productId,
-            },
-          },
-          create: {
-            warehouseId: centralWarehouse.id,
-            productId: item.saleDetail.productId,
-            stock: item.quantity,
-          },
-          update: {
-            stock: {
-              increment: item.quantity,
-            },
-          },
-          select: {
-            stock: true,
-          },
-        });
-
-        await prisma.inventoryMovement.create({
-          data: {
-            warehouseId: centralWarehouse.id,
-            productId: item.saleDetail.productId,
-            userId,
-            type: $Enums.InventoryMovementType.SALE_RETURN_IN,
-            quantity: item.quantity,
-            previousStock: centralStock?.stock || 0,
-            newStock: updatedCentralStock.stock,
-            referenceId: saleReturn.id,
-            observations: `Devolución de venta ${sale.saleNumber}`,
-          },
-        });
-      }
-
-      const newSubtotal = this.roundMoney(sale.subtotal - returnTotal);
-
-      const newTotal = this.roundMoney(
-        Math.max(newSubtotal - sale.discount, 0),
-      );
-
-      const paidAmount = await this.getPaidAmount(saleId, prisma);
-
-      await prisma.sale.update({
-        where: {
-          id: saleId,
-        },
-        data: {
-          subtotal: newSubtotal,
-          total: newTotal,
-          paymentStatus: this.calculatePaymentStatus(newTotal, paidAmount),
-        },
-      });
-
-      return saleReturn;
-    });
 
     return {
-      message: 'Devolución registrada correctamente',
+      message:
+        'Devolución registrada correctamente',
       return: result,
       sale: await this.findOne(saleId),
     };
@@ -1185,7 +1468,8 @@ export class SalesService {
     }
 
     if (filters?.paymentStatus) {
-      where.paymentStatus = filters.paymentStatus;
+      where.paymentStatus =
+        filters.paymentStatus;
     }
 
     if (filters?.clientId) {
@@ -1198,7 +1482,10 @@ export class SalesService {
 
     if (filters?.withDebt) {
       where.paymentStatus = {
-        in: [$Enums.PaymentStatus.PENDING, $Enums.PaymentStatus.PARTIALLY_PAID],
+        in: [
+          $Enums.PaymentStatus.PENDING,
+          $Enums.PaymentStatus.PARTIALLY_PAID,
+        ],
       };
 
       where.status = {
@@ -1206,67 +1493,91 @@ export class SalesService {
       };
     }
 
-    if (filters?.dateFrom || filters?.dateTo) {
+    if (
+      filters?.dateFrom ||
+      filters?.dateTo
+    ) {
       where.date = {};
 
       if (filters.dateFrom) {
-        where.date.gte = filters.dateFrom;
+        where.date.gte =
+          filters.dateFrom;
       }
 
       if (filters.dateTo) {
-        where.date.lte = filters.dateTo;
+        where.date.lte =
+          filters.dateTo;
       }
     }
 
-    const sales = await this.prisma.sale.findMany({
-      where,
-      include: this.saleInclude(),
-      orderBy: {
-        date: 'desc',
-      },
-    });
+    const sales =
+      await this.prisma.sale.findMany({
+        where,
+        include: this.saleInclude(),
+        orderBy: {
+          date: 'desc',
+        },
+      });
 
-    return Promise.all(sales.map((sale) => this.toResponse(sale)));
+    return Promise.all(
+      sales.map((sale) =>
+        this.toResponse(sale),
+      ),
+    );
   }
 
-  async findOne(id: string): Promise<SaleResponseDto> {
-    const sale = await this.prisma.sale.findUnique({
-      where: {
-        id,
-      },
-      include: this.saleInclude(),
-    });
+  async findOne(
+    id: string,
+  ): Promise<SaleResponseDto> {
+    const sale =
+      await this.prisma.sale.findUnique({
+        where: {
+          id,
+        },
+        include: this.saleInclude(),
+      });
 
     if (!sale) {
-      throw new NotFoundException('Venta no encontrada');
+      throw new NotFoundException(
+        'Venta no encontrada',
+      );
     }
 
     return this.toResponse(sale);
   }
 
   async getLowStockProducts() {
-    const centralWarehouse = await this.getCentralWarehouse();
-    const stocks = await this.prisma.warehouseStock.findMany({
-      where: {
-        warehouseId: centralWarehouse.id,
-      },
-      include: {
-        product: true,
-      },
-      orderBy: {
-        product: {
-          name: 'asc',
+    const centralWarehouse =
+      await this.getCentralWarehouse();
+    const stocks =
+      await this.prisma.warehouseStock.findMany({
+        where: {
+          warehouseId: centralWarehouse.id,
         },
-      },
-    });
+        include: {
+          product: true,
+        },
+        orderBy: {
+          product: {
+            name: 'asc',
+          },
+        },
+      });
 
     return stocks
       .map((stock) => ({
         ...stock.product,
         stock: stock.stock,
-        reservedStock: stock.reservedStock,
-        availableStock: stock.stock - stock.reservedStock,
+        reservedStock:
+          stock.reservedStock,
+        availableStock:
+          stock.stock -
+          stock.reservedStock,
       }))
-      .filter((product) => product.availableStock <= product.minStock);
+      .filter(
+        (product) =>
+          product.availableStock <=
+          product.minStock,
+      );
   }
 }

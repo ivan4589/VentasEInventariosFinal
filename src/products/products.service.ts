@@ -14,16 +14,26 @@ export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
   private toResponse(product: any): ProductResponseDto {
-    const { provider, category, subCategory, warehouseStocks, ...rest } =
-      product;
+    const {
+      provider,
+      category,
+      subCategory,
+      warehouseStocks,
+      ...rest
+    } = product;
     const centralStock = warehouseStocks?.[0];
 
     return {
       ...rest,
       centralStock: centralStock?.stock ?? 0,
-      centralReservedStock: centralStock?.reservedStock ?? 0,
+      centralReservedStock:
+        centralStock?.reservedStock ?? 0,
       centralAvailableStock: centralStock
-        ? Math.max(centralStock.stock - centralStock.reservedStock, 0)
+        ? Math.max(
+            centralStock.stock -
+              centralStock.reservedStock,
+            0,
+          )
         : 0,
     };
   }
