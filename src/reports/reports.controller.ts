@@ -14,6 +14,15 @@ import { ReportFiltersDto } from './dto/report-filters.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { AnalyticsReportsService } from './analytics-reports.service';
+import { AnalyticsReportFiltersDto } from './dto/analytics-report-filters.dto';
+
+interface AuthenticatedRequest {
+  user: {
+    id: number;
+    role: $Enums.Role;
+  };
+}
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -21,7 +30,40 @@ export class ReportsController {
   constructor(
     private readonly reportsService: ReportsService,
     private readonly reportHistoryService: ReportHistoryService,
+    private readonly analyticsReportsService: AnalyticsReportsService,
   ) {}
+
+  @Get('catalog')
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  getCatalog(@Request() req: AuthenticatedRequest) {
+    return this.analyticsReportsService.getCatalog(req.user.role);
+  }
+
+  @Get('data/:reportKey')
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  getAnalyticsReport(
+    @Param('reportKey') reportKey: string,
+    @Query() filters: AnalyticsReportFiltersDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.analyticsReportsService.getReport(reportKey, filters, {
+      id: req.user.id,
+      role: req.user.role,
+    });
+  }
+
+  @Post('pdf/:reportKey')
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  generateAnalyticsReportPdf(
+    @Param('reportKey') reportKey: string,
+    @Query() filters: AnalyticsReportFiltersDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.analyticsReportsService.generatePdf(reportKey, filters, {
+      id: req.user.id,
+      role: req.user.role,
+    });
+  }
 
   @Get('inventory')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
@@ -31,7 +73,7 @@ export class ReportsController {
 
   @Post('inventory/pdf')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
-  generateInventoryPDF(@Request() req) {
+  generateInventoryPDF(@Request() req: AuthenticatedRequest) {
     return this.reportsService.generateInventoryPDF(req.user.id);
   }
 
@@ -43,7 +85,10 @@ export class ReportsController {
 
   @Post('sales/pdf')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
-  generateSalesPDF(@Query() filters: ReportFiltersDto, @Request() req) {
+  generateSalesPDF(
+    @Query() filters: ReportFiltersDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
     return this.reportsService.generateSalesPDF(filters, req.user.id);
   }
 
@@ -55,7 +100,10 @@ export class ReportsController {
 
   @Post('sales-summary/pdf')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
-  generateSalesSummaryPDF(@Query() filters: ReportFiltersDto, @Request() req) {
+  generateSalesSummaryPDF(
+    @Query() filters: ReportFiltersDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
     return this.reportsService.generateSalesSummaryPDF(filters, req.user.id);
   }
 
@@ -67,7 +115,10 @@ export class ReportsController {
 
   @Post('collection/pdf')
   @Roles($Enums.Role.ADMIN, $Enums.Role.COBRADOR)
-  generateCollectionPDF(@Query() filters: ReportFiltersDto, @Request() req) {
+  generateCollectionPDF(
+    @Query() filters: ReportFiltersDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
     return this.reportsService.generateCollectionPDF(filters, req.user.id);
   }
 
