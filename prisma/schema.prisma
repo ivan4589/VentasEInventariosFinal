@@ -253,6 +253,8 @@ model Sale {
   saleType      SaleType      @default(CASH)
 
   dueDate DateTime?
+  confirmedAt DateTime?
+  cancelledAt DateTime?
 
   subtotal Float @default(0)
   discount Float @default(0)
@@ -271,6 +273,8 @@ model Sale {
   updatedAt DateTime @updatedAt
 
   @@index([date])
+  @@index([confirmedAt])
+  @@index([cancelledAt])
   @@index([clientId])
   @@index([userId])
   @@index([status])
