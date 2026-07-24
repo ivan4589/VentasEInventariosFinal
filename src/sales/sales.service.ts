@@ -735,6 +735,7 @@ export class SalesService {
           data: {
             status:
               $Enums.SaleStatus.CONFIRMED,
+            confirmedAt: new Date(),
           },
         });
       },
@@ -1153,6 +1154,7 @@ export class SalesService {
           data: {
             status:
               $Enums.SaleStatus.CANCELLED,
+            cancelledAt: new Date(),
           },
         });
       },

@@ -85,6 +85,56 @@ export class PurchasesService {
     return this.roundMoney((salePrice / purchasePrice - 1) * 100);
   }
 
+  private async recalculateWeightedPurchasePrice(
+    prisma: any,
+    productId: string,
+  ): Promise<void> {
+    const receivedDetails = await prisma.purchaseDetail.findMany({
+      where: {
+        productId,
+        purchaseProvider: {
+          status: $Enums.PurchaseProviderStatus.RECEIVED,
+        },
+      },
+      select: {
+        quantity: true,
+        unitPrice: true,
+      },
+    });
+
+    const totalQuantity = receivedDetails.reduce(
+      (sum: number, detail: { quantity: number }) =>
+        sum + detail.quantity,
+      0,
+    );
+
+    if (totalQuantity <= 0) {
+      return;
+    }
+
+    const totalValue = receivedDetails.reduce(
+      (
+        sum: number,
+        detail: {
+          quantity: number;
+          unitPrice: number;
+        },
+      ) => sum + detail.quantity * detail.unitPrice,
+      0,
+    );
+
+    await prisma.product.update({
+      where: {
+        id: productId,
+      },
+      data: {
+        purchasePrice: this.roundMoney(
+          totalValue / totalQuantity,
+        ),
+      },
+    });
+  }
+
   private toResponse(purchase: any): PurchaseResponseDto {
     return {
       id: purchase.id,
@@ -792,7 +842,19 @@ export class PurchasesService {
 
       for (const detail of group.details) {
         const product = detail.product;
-        const newPurchasePrice = this.roundMoney(detail.unitPrice);
+        const previousStockValue =
+          product.stock * product.purchasePrice;
+        const receivedStockValue =
+          detail.quantity * detail.unitPrice;
+        const stockAfterReceipt =
+          product.stock + detail.quantity;
+        const newPurchasePrice = this.roundMoney(
+          stockAfterReceipt > 0
+            ? (previousStockValue +
+                receivedStockValue) /
+                stockAfterReceipt
+            : detail.unitPrice,
+        );
         const warehouseDistributions =
           await this.resolveDetailWarehouseDistributions(prisma, detail);
 
@@ -984,6 +1046,17 @@ export class PurchasesService {
         },
       });
 
+      for (const productId of new Set(
+        group.details.map(
+          (detail) => detail.productId,
+        ),
+      )) {
+        await this.recalculateWeightedPurchasePrice(
+          prisma,
+          productId,
+        );
+      }
+
       return this.synchronizePurchase(prisma, purchaseId);
     });
 
@@ -1079,6 +1152,17 @@ export class PurchasesService {
           cancelledAt: new Date(),
         },
       });
+
+      for (const productId of new Set(
+        receivedDetails.map(
+          (detail) => detail.productId,
+        ),
+      )) {
+        await this.recalculateWeightedPurchasePrice(
+          prisma,
+          productId,
+        );
+      }
 
       await prisma.purchase.update({
         where: {
