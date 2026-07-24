@@ -1,7 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { InventoryItemDto } from './dto/inventory-response.dto';
+import {
+  CentralInventoryCategoryDto,
+  CentralInventoryProductDto,
+  CentralInventoryProviderDto,
+  InventoryResponseDto,
+} from './dto/inventory-response.dto';
 import * as puppeteer from 'puppeteer';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -10,71 +15,232 @@ import * as fs from 'fs';
 export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getInventory(categoryId?: string): Promise<InventoryItemDto[]> {
-    const where: any = {};
+  private roundQuantity(value: number): number {
+    return Math.round((value + Number.EPSILON) * 1000) / 1000;
+  }
 
-    if (categoryId) {
-      const category = await this.prisma.category.findUnique({
-        where: { id: categoryId },
-      });
+  private productCode(productId: string): string {
+    return `PROD-${productId.slice(-8).toUpperCase()}`;
+  }
 
-      if (!category) {
-        throw new NotFoundException('Categoría no encontrada');
-      }
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
 
-      where.categoryId = categoryId;
-    }
-
-    const products = await this.prisma.product.findMany({
-      where,
-      include: {
-        category: true,
+  async getInventory(): Promise<InventoryResponseDto> {
+    const warehouse = await this.prisma.warehouse.findFirst({
+      where: {
+        isDefault: true,
+        isActive: true,
       },
-      orderBy: [
-        {
-          category: {
-            name: 'asc',
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        stocks: {
+          where: {
+            stock: {
+              gt: 0,
+            },
+          },
+          select: {
+            stock: true,
+            reservedStock: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                unit: true,
+                provider: {
+                  select: {
+                    id: true,
+                    companyName: true,
+                  },
+                },
+                category: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: {
+            product: {
+              name: 'asc',
+            },
           },
         },
-        {
-          name: 'asc',
-        },
-      ],
+      },
     });
 
-    return products.map((product) => ({
-      productId: product.id,
-      name: product.name,
-      category: product.category?.name || 'Sin categoría',
-      categoryId: product.categoryId,
-      stock: product.stock,
-      unit: product.unit,
-      minStock: product.minStock,
-    }));
+    if (!warehouse) {
+      throw new BadRequestException(
+        'No existe un Almacén Central activo configurado como predeterminado',
+      );
+    }
+
+    const providerMap = new Map<
+      string,
+      {
+        providerId: string;
+        providerName: string;
+        categories: Map<
+          string,
+          {
+            categoryId: string;
+            categoryName: string;
+            products: CentralInventoryProductDto[];
+          }
+        >;
+      }
+    >();
+
+    for (const item of warehouse.stocks) {
+      const { product } = item;
+      const providerId = product.provider.id;
+      const categoryId = product.category.id;
+
+      let provider = providerMap.get(providerId);
+
+      if (!provider) {
+        provider = {
+          providerId,
+          providerName: product.provider.companyName,
+          categories: new Map(),
+        };
+        providerMap.set(providerId, provider);
+      }
+
+      let category = provider.categories.get(categoryId);
+
+      if (!category) {
+        category = {
+          categoryId,
+          categoryName: product.category.name,
+          products: [],
+        };
+        provider.categories.set(categoryId, category);
+      }
+
+      category.products.push({
+        productId: product.id,
+        code: this.productCode(product.id),
+        name: product.name,
+        unit: product.unit,
+        stock: this.roundQuantity(item.stock),
+        reservedStock: this.roundQuantity(item.reservedStock),
+        availableStock: this.roundQuantity(
+          Math.max(item.stock - item.reservedStock, 0),
+        ),
+      });
+    }
+
+    const providers: CentralInventoryProviderDto[] = Array.from(
+      providerMap.values(),
+    )
+      .sort((left, right) =>
+        left.providerName.localeCompare(right.providerName, 'es'),
+      )
+      .map((provider) => {
+        const categories: CentralInventoryCategoryDto[] = Array.from(
+          provider.categories.values(),
+        )
+          .sort((left, right) =>
+            left.categoryName.localeCompare(right.categoryName, 'es'),
+          )
+          .map((category) => ({
+            ...category,
+            products: category.products.sort((left, right) =>
+              left.name.localeCompare(right.name, 'es'),
+            ),
+            totalStock: this.roundQuantity(
+              category.products.reduce(
+                (sum, product) => sum + product.stock,
+                0,
+              ),
+            ),
+            totalReservedStock: this.roundQuantity(
+              category.products.reduce(
+                (sum, product) => sum + product.reservedStock,
+                0,
+              ),
+            ),
+            totalAvailableStock: this.roundQuantity(
+              category.products.reduce(
+                (sum, product) => sum + product.availableStock,
+                0,
+              ),
+            ),
+          }));
+
+        return {
+          providerId: provider.providerId,
+          providerName: provider.providerName,
+          categories,
+          totalProducts: categories.reduce(
+            (sum, category) => sum + category.products.length,
+            0,
+          ),
+          totalStock: this.roundQuantity(
+            categories.reduce((sum, category) => sum + category.totalStock, 0),
+          ),
+          totalReservedStock: this.roundQuantity(
+            categories.reduce(
+              (sum, category) => sum + category.totalReservedStock,
+              0,
+            ),
+          ),
+          totalAvailableStock: this.roundQuantity(
+            categories.reduce(
+              (sum, category) => sum + category.totalAvailableStock,
+              0,
+            ),
+          ),
+        };
+      });
+
+    return {
+      warehouse: {
+        id: warehouse.id,
+        name: warehouse.name,
+        code: warehouse.code,
+      },
+      providers,
+      generatedAt: new Date(),
+      totalProducts: providers.reduce(
+        (sum, provider) => sum + provider.totalProducts,
+        0,
+      ),
+      totalStock: this.roundQuantity(
+        providers.reduce((sum, provider) => sum + provider.totalStock, 0),
+      ),
+      totalReservedStock: this.roundQuantity(
+        providers.reduce(
+          (sum, provider) => sum + provider.totalReservedStock,
+          0,
+        ),
+      ),
+      totalAvailableStock: this.roundQuantity(
+        providers.reduce(
+          (sum, provider) => sum + provider.totalAvailableStock,
+          0,
+        ),
+      ),
+    };
   }
 
   async generateInventoryPDF(
     userId: number,
-    categoryId?: string,
   ): Promise<{ pdfUrl: string; historyId: string }> {
-    const items = await this.getInventory(categoryId);
-
-    let categoryName = 'General';
-
-    if (categoryId) {
-      const category = await this.prisma.category.findUnique({
-        where: { id: categoryId },
-      });
-
-      if (!category) {
-        throw new NotFoundException('Categoría no encontrada');
-      }
-
-      categoryName = category.name;
-    }
-
-    const html = this.buildInventoryHTML(items, categoryName);
-
+    const inventory = await this.getInventory();
+    const html = this.buildInventoryHTML(inventory);
     let browser: puppeteer.Browser | null = null;
 
     try {
@@ -84,49 +250,40 @@ export class InventoryService {
       });
 
       const page = await browser.newPage();
-
       await page.setContent(html, { waitUntil: 'load' });
 
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
         margin: {
-          top: '20px',
-          right: '20px',
-          bottom: '20px',
-          left: '20px',
+          top: '18mm',
+          right: '12mm',
+          bottom: '18mm',
+          left: '12mm',
         },
       });
 
-      const safeCategoryName = categoryName
-        .replace(/\s+/g, '_')
-        .replace(/[^\w-]/g, '');
-
-      const filename = `inventario-${safeCategoryName}-${new Date()
+      const filename = `inventario-almacen-central-${new Date()
         .toISOString()
-        .slice(0, 10)}.pdf`;
-
+        .replace(/[:.]/g, '-')
+        .slice(0, 19)}.pdf`;
       const uploadDir = path.join(process.cwd(), 'uploads', 'reports');
 
       if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });
       }
 
-      const filePath = path.join(uploadDir, filename);
-
-      fs.writeFileSync(filePath, pdfBuffer);
+      fs.writeFileSync(path.join(uploadDir, filename), pdfBuffer);
 
       const pdfUrl = `/uploads/reports/${filename}`;
-
       const history = await this.prisma.reportHistory.create({
         data: {
           type: $Enums.ReportType.INVENTORY_GENERAL,
-          title:
-            categoryName === 'General'
-              ? 'Inventario General'
-              : `Inventario ${categoryName}`,
+          title: 'Inventario del Almacén Central',
           parameters: JSON.stringify({
-            categoryId: categoryId || null,
+            warehouseId: inventory.warehouse.id,
+            onlyPositiveStock: true,
+            includesPrices: false,
           }),
           fileUrl: pdfUrl,
           userId,
@@ -145,14 +302,11 @@ export class InventoryService {
   }
 
   async getHistory(userId?: number) {
-    const where: any = {};
-
-    if (userId) {
-      where.userId = userId;
-    }
-
     return this.prisma.reportHistory.findMany({
-      where,
+      where: {
+        type: $Enums.ReportType.INVENTORY_GENERAL,
+        ...(userId ? { userId } : {}),
+      },
       include: {
         user: {
           select: {
@@ -169,186 +323,157 @@ export class InventoryService {
     });
   }
 
-  private buildInventoryHTML(
-    items: InventoryItemDto[],
-    categoryName: string,
-  ): string {
-    const grouped = items.reduce(
-      (acc, item) => {
-        if (!acc[item.category]) {
-          acc[item.category] = [];
-        }
+  private buildInventoryHTML(inventory: InventoryResponseDto): string {
+    const providersHTML = inventory.providers
+      .map((provider) => {
+        const categoriesHTML = provider.categories
+          .map((category) => {
+            const rows = category.products
+              .map(
+                (product) => `
+                  <tr>
+                    <td>${this.escapeHtml(product.code)}</td>
+                    <td>${this.escapeHtml(product.name)}</td>
+                    <td class="number">${product.stock}</td>
+                    <td class="number">${product.reservedStock}</td>
+                    <td class="number">${product.availableStock}</td>
+                  </tr>
+                `,
+              )
+              .join('');
 
-        acc[item.category].push(item);
+            return `
+              <section class="category">
+                <h3>${this.escapeHtml(category.categoryName)}</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Producto</th>
+                      <th>Stock actual</th>
+                      <th>Reservado</th>
+                      <th>Disponible</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${rows}
+                    <tr class="subtotal">
+                      <td colspan="2">Subtotal ${this.escapeHtml(
+                        category.categoryName,
+                      )}</td>
+                      <td class="number">${category.totalStock}</td>
+                      <td class="number">${category.totalReservedStock}</td>
+                      <td class="number">${category.totalAvailableStock}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+            `;
+          })
+          .join('');
 
-        return acc;
-      },
-      {} as Record<string, InventoryItemDto[]>,
-    );
-
-    let categoriesHTML = '';
-
-    for (const [category, products] of Object.entries(grouped)) {
-      let rows = '';
-
-      for (const product of products) {
-        const isLowStock = product.stock <= product.minStock && product.minStock > 0;
-
-        rows += `
-          <tr style="${isLowStock ? 'background-color: #fff3cd;' : ''}">
-            <td style="border:1px solid #ccc; padding:8px;">${product.name}</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${product.stock}</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">${product.unit}</td>
-            <td style="border:1px solid #ccc; padding:8px; text-align:center;">
-              ${isLowStock ? 'Stock bajo' : 'Normal'}
-            </td>
-          </tr>
+        return `
+          <section class="provider">
+            <h2>${this.escapeHtml(provider.providerName)}</h2>
+            ${categoriesHTML}
+          </section>
         `;
-      }
+      })
+      .join('');
 
-      const subTotal = products.reduce(
-        (sum, product) => sum + product.stock,
-        0,
-      );
-
-      categoriesHTML += `
-        <h3 style="margin-top:20px; background:#f0f0f0; padding:8px;">
-          ${category}
-        </h3>
-
-        <table style="width:100%; border-collapse:collapse; margin-bottom:10px;">
-          <thead>
-            <tr style="background:#e0e0e0;">
-              <th style="border:1px solid #ccc; padding:8px; text-align:left;">
-                Producto
-              </th>
-              <th style="border:1px solid #ccc; padding:8px; text-align:center;">
-                Stock
-              </th>
-              <th style="border:1px solid #ccc; padding:8px; text-align:center;">
-                Unidad
-              </th>
-              <th style="border:1px solid #ccc; padding:8px; text-align:center;">
-                Estado
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            ${rows}
-
-            <tr style="font-weight:bold; background:#f9f9f9;">
-              <td style="border:1px solid #ccc; padding:8px;">
-                Total ${category}
-              </td>
-              <td style="border:1px solid #ccc; padding:8px; text-align:center;">
-                ${subTotal}
-              </td>
-              <td colspan="2" style="border:1px solid #ccc; padding:8px;"></td>
-            </tr>
-          </tbody>
-        </table>
-      `;
-    }
-
-    const totalStock = items.reduce((sum, product) => sum + product.stock, 0);
-
-    const lowStockCount = items.filter(
-      (product) => product.stock <= product.minStock && product.minStock > 0,
-    ).length;
-
-    const date = new Date().toLocaleString('es-BO', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const generatedAt = new Intl.DateTimeFormat('es-BO', {
+      dateStyle: 'long',
+      timeStyle: 'short',
+      timeZone: 'America/La_Paz',
+    }).format(inventory.generatedAt);
 
     return `
       <!DOCTYPE html>
-      <html>
+      <html lang="es">
         <head>
           <meta charset="UTF-8" />
-
           <style>
+            * { box-sizing: border-box; }
             body {
-              font-family: Arial, sans-serif;
-              padding: 20px;
-              color: #222;
-            }
-
-            .header {
-              text-align: center;
-              margin-bottom: 30px;
-              border-bottom: 2px solid #2c3e50;
-              padding-bottom: 20px;
-            }
-
-            .header h1 {
-              color: #2c3e50;
               margin: 0;
+              color: #1f2937;
+              font-family: Arial, sans-serif;
+              font-size: 10px;
             }
-
-            .header p {
-              color: #7f8c8d;
-              margin: 5px 0;
-            }
-
-            .summary {
-              background: #d4edda;
-              padding: 15px;
-              border-radius: 5px;
-              margin-bottom: 20px;
-            }
-
-            .summary table {
-              width: 100%;
-            }
-
-            .summary td {
-              padding: 5px;
-            }
-
-            .footer {
+            header {
+              border-bottom: 3px solid #07553d;
+              margin-bottom: 18px;
+              padding-bottom: 12px;
               text-align: center;
-              margin-top: 30px;
+            }
+            h1 { color: #07553d; font-size: 22px; margin: 0 0 6px; }
+            header p { margin: 3px 0; }
+            .summary {
+              background: #eef8f3;
+              border: 1px solid #badbcd;
+              border-radius: 6px;
+              display: grid;
+              gap: 8px;
+              grid-template-columns: repeat(4, 1fr);
+              margin-bottom: 18px;
+              padding: 10px;
+              text-align: center;
+            }
+            .summary strong { display: block; font-size: 15px; margin-top: 3px; }
+            .provider { break-inside: avoid; margin-bottom: 20px; }
+            .provider h2 {
+              background: #07553d;
+              color: white;
+              font-size: 15px;
+              margin: 0;
+              padding: 8px 10px;
+            }
+            .category { break-inside: avoid; margin-top: 10px; }
+            .category h3 {
+              background: #e5e7eb;
               font-size: 12px;
-              color: #7f8c8d;
-              border-top: 1px solid #ccc;
-              padding-top: 10px;
+              margin: 0;
+              padding: 6px 8px;
+            }
+            table { border-collapse: collapse; table-layout: fixed; width: 100%; }
+            th, td { border: 1px solid #cbd5e1; padding: 6px; }
+            th { background: #f8fafc; text-align: left; }
+            th:first-child, td:first-child { width: 17%; }
+            th:nth-child(n+3), td:nth-child(n+3) { width: 15%; }
+            .number { text-align: right; }
+            .subtotal { background: #f1f5f9; font-weight: bold; }
+            .empty { color: #64748b; padding: 30px; text-align: center; }
+            footer {
+              border-top: 1px solid #cbd5e1;
+              color: #64748b;
+              margin-top: 20px;
+              padding-top: 8px;
+              text-align: center;
             }
           </style>
         </head>
-
         <body>
-          <div class="header">
-            <h1>REPORTE DE INVENTARIO</h1>
-            <p>
-              ${
-                categoryName === 'General'
-                  ? 'Inventario General'
-                  : `Categoría: ${categoryName}`
-              }
-            </p>
-            <p><strong>Fecha de generación:</strong> ${date}</p>
-          </div>
+          <header>
+            <h1>INVENTARIO DEL ALMACÉN CENTRAL</h1>
+            <p><strong>${this.escapeHtml(inventory.warehouse.name)}</strong></p>
+            <p>Generado: ${this.escapeHtml(generatedAt)}</p>
+          </header>
 
           <div class="summary">
-            <table>
-              <tr>
-                <td><strong>Total de productos:</strong> ${items.length}</td>
-                <td><strong>Unidades totales:</strong> ${totalStock}</td>
-                <td><strong>Productos con stock bajo:</strong> ${lowStockCount}</td>
-              </tr>
-            </table>
+            <div>Productos<strong>${inventory.totalProducts}</strong></div>
+            <div>Stock actual<strong>${inventory.totalStock}</strong></div>
+            <div>Reservado<strong>${inventory.totalReservedStock}</strong></div>
+            <div>Disponible<strong>${inventory.totalAvailableStock}</strong></div>
           </div>
 
-          ${categoriesHTML}
+          ${
+            providersHTML ||
+            '<div class="empty">No existen productos con stock mayor que cero en el Almacén Central.</div>'
+          }
 
-          <div class="footer">
-            <p>Reporte generado automáticamente por el Sistema de Ventas e Inventarios</p>
-          </div>
+          <footer>
+            Reporte sin precios — Sistema de Ventas e Inventarios
+          </footer>
         </body>
       </html>
     `;

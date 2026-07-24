@@ -1,17 +1,42 @@
-export class InventoryItemDto {
+export class CentralInventoryProductDto {
   productId: string;
+  code: string;
   name: string;
-  category: string;
-  categoryId: string;
-  stock: number;
   unit: string;
-  minStock: number;
+  stock: number;
+  reservedStock: number;
+  availableStock: number;
+}
+
+export class CentralInventoryCategoryDto {
+  categoryId: string;
+  categoryName: string;
+  products: CentralInventoryProductDto[];
+  totalStock: number;
+  totalReservedStock: number;
+  totalAvailableStock: number;
+}
+
+export class CentralInventoryProviderDto {
+  providerId: string;
+  providerName: string;
+  categories: CentralInventoryCategoryDto[];
+  totalProducts: number;
+  totalStock: number;
+  totalReservedStock: number;
+  totalAvailableStock: number;
 }
 
 export class InventoryResponseDto {
-  items: InventoryItemDto[];
+  warehouse: {
+    id: string;
+    name: string;
+    code: string;
+  };
+  providers: CentralInventoryProviderDto[];
   generatedAt: Date;
   totalProducts: number;
   totalStock: number;
-  lowStockProducts: number;
+  totalReservedStock: number;
+  totalAvailableStock: number;
 }

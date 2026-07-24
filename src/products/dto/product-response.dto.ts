@@ -13,6 +13,9 @@ export class ProductResponseDto {
   priceMayorista?: number;
   minQuantityWholesale?: number;
   stock: number;
+  centralStock?: number;
+  centralReservedStock?: number;
+  centralAvailableStock?: number;
   minStock: number;
   unit: string;
   reserveQuantity: number;

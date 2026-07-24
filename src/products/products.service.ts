@@ -14,18 +14,44 @@ export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
   private toResponse(product: any): ProductResponseDto {
-    // Excluir relaciones si no se necesitan en la respuesta
-    const { provider, category, subCategory, ...rest } = product;
-    return rest;
+    const { provider, category, subCategory, warehouseStocks, ...rest } =
+      product;
+    const centralStock = warehouseStocks?.[0];
+
+    return {
+      ...rest,
+      centralStock: centralStock?.stock ?? 0,
+      centralReservedStock: centralStock?.reservedStock ?? 0,
+      centralAvailableStock: centralStock
+        ? Math.max(centralStock.stock - centralStock.reservedStock, 0)
+        : 0,
+    };
+  }
+
+  private productInclude(): any {
+    return {
+      provider: true,
+      category: true,
+      subCategory: true,
+      warehouseStocks: {
+        where: {
+          warehouse: {
+            isDefault: true,
+            isActive: true,
+          },
+        },
+        select: {
+          stock: true,
+          reservedStock: true,
+        },
+        take: 1,
+      },
+    };
   }
 
   async findAll(): Promise<ProductResponseDto[]> {
     const products = await this.prisma.product.findMany({
-      include: {
-        provider: true,
-        category: true,
-        subCategory: true,
-      },
+      include: this.productInclude(),
     });
     return products.map((p) => this.toResponse(p));
   }
@@ -33,11 +59,7 @@ export class ProductsService {
   async findOne(id: string): Promise<ProductResponseDto> {
     const product = await this.prisma.product.findUnique({
       where: { id },
-      include: {
-        provider: true,
-        category: true,
-        subCategory: true,
-      },
+      include: this.productInclude(),
     });
     if (!product)
       throw new NotFoundException(`Producto con ID ${id} no encontrado`);
@@ -53,11 +75,7 @@ export class ProductsService {
           mode: 'insensitive',
         },
       },
-      include: {
-        provider: true,
-        category: true,
-        subCategory: true,
-      },
+      include: this.productInclude(),
     });
     return products.map((p) => this.toResponse(p));
   }
@@ -66,11 +84,7 @@ export class ProductsService {
   async findByCategory(categoryId: string): Promise<ProductResponseDto[]> {
     const products = await this.prisma.product.findMany({
       where: { categoryId },
-      include: {
-        provider: true,
-        category: true,
-        subCategory: true,
-      },
+      include: this.productInclude(),
     });
     return products.map((p) => this.toResponse(p));
   }
@@ -79,11 +93,7 @@ export class ProductsService {
   async findByProvider(providerId: string): Promise<ProductResponseDto[]> {
     const products = await this.prisma.product.findMany({
       where: { providerId },
-      include: {
-        provider: true,
-        category: true,
-        subCategory: true,
-      },
+      include: this.productInclude(),
     });
     return products.map((p) => this.toResponse(p));
   }

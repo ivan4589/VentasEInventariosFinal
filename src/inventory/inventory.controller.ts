@@ -1,15 +1,6 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  UseGuards,
-  Request,
-  Query,
-} from '@nestjs/common';
+import { Controller, Get, Post, UseGuards, Request } from '@nestjs/common';
 import { $Enums } from '../../generated/prisma/client';
 import { InventoryService } from './inventory.service';
-import { GenerateInventoryPdfDto } from './dto/generate-inventory-pdf.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -20,27 +11,16 @@ export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   @Get()
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
-  async getInventory(@Query('categoryId') categoryId?: string) {
-    const items = await this.inventoryService.getInventory(categoryId);
-
-    return {
-      items,
-      generatedAt: new Date(),
-      totalProducts: items.length,
-      totalStock: items.reduce((sum, product) => sum + product.stock, 0),
-      lowStockProducts: items.filter(
-        (product) => product.stock <= product.minStock && product.minStock > 0,
-      ).length,
-    };
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  getInventory() {
+    return this.inventoryService.getInventory();
   }
 
   @Post('pdf')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
-  async generatePDF(@Body() dto: GenerateInventoryPdfDto, @Request() req) {
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  async generatePDF(@Request() req) {
     const result = await this.inventoryService.generateInventoryPDF(
       req.user.id,
-      dto.categoryId,
     );
 
     return {
