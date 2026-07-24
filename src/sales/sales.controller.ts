@@ -144,7 +144,13 @@ export class SalesController {
 
   @Delete(':id')
   @Roles($Enums.Role.ADMIN)
-  cancel(@Param('id') id: string) {
-    return this.salesService.cancel(id);
+  cancel(
+    @Param('id') id: string,
+    @Request() req: any,
+  ) {
+    return this.salesService.cancel(
+      id,
+      req.user.id,
+    );
   }
 }

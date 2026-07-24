@@ -179,6 +179,30 @@ export class SalesService {
     );
   }
 
+  private async getCentralWarehouse(
+    prisma: any = this.prisma,
+  ): Promise<{ id: string; name: string }> {
+    const warehouse =
+      await prisma.warehouse.findFirst({
+        where: {
+          isDefault: true,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+
+    if (!warehouse) {
+      throw new BadRequestException(
+        'No existe un Almacén Central activo configurado como predeterminado',
+      );
+    }
+
+    return warehouse;
+  }
+
   private async toResponse(
     sale: any,
   ): Promise<SaleResponseDto> {
@@ -274,7 +298,7 @@ export class SalesService {
       );
     }
 
-    const [client, products] = await Promise.all([
+    const [client, products, centralWarehouse] = await Promise.all([
       this.prisma.client.findUnique({
         where: {
           id: clientId,
@@ -287,6 +311,7 @@ export class SalesService {
           },
         },
       }),
+      this.getCentralWarehouse(),
     ]);
 
     if (!client) {
@@ -305,6 +330,28 @@ export class SalesService {
       products.map((product) => [
         product.id,
         product,
+      ]),
+    );
+
+    const centralStocks =
+      await this.prisma.warehouseStock.findMany({
+        where: {
+          warehouseId: centralWarehouse.id,
+          productId: {
+            in: productIds,
+          },
+        },
+        select: {
+          productId: true,
+          stock: true,
+          reservedStock: true,
+        },
+      });
+
+    const centralStockMap = new Map(
+      centralStocks.map((stock) => [
+        stock.productId,
+        stock,
       ]),
     );
 
@@ -344,14 +391,17 @@ export class SalesService {
         const oldReserved =
           previousReservations.get(product.id) || 0;
 
+        const centralStock =
+          centralStockMap.get(product.id);
+
         const availableStock =
-          product.stock -
-          product.reservedStock +
+          (centralStock?.stock || 0) -
+          (centralStock?.reservedStock || 0) +
           oldReserved;
 
         if (detail.quantity > availableStock) {
           throw new BadRequestException(
-            `Stock insuficiente para "${product.name}". Disponible: ${availableStock}, solicitado: ${detail.quantity}`,
+            `Stock insuficiente para "${product.name}" en ${centralWarehouse.name}. Disponible: ${availableStock}, solicitado: ${detail.quantity}`,
           );
         }
 
@@ -382,6 +432,7 @@ export class SalesService {
 
     return {
       client,
+      centralWarehouse,
       preparedDetails,
     };
   }
@@ -419,7 +470,7 @@ export class SalesService {
     const parsedDueDate =
       this.validateDueDate(saleType, dueDate);
 
-    const { preparedDetails } =
+    const { centralWarehouse, preparedDetails } =
       await this.validateAndPrepareDetails(
         clientId,
         details,
@@ -470,6 +521,20 @@ export class SalesService {
     const sale = await this.prisma.$transaction(
       async (prisma) => {
         for (const detail of preparedDetails) {
+          await prisma.warehouseStock.update({
+            where: {
+              warehouseId_productId: {
+                warehouseId: centralWarehouse.id,
+                productId: detail.productId,
+              },
+            },
+            data: {
+              reservedStock: {
+                increment: detail.quantity,
+              },
+            },
+          });
+
           await prisma.product.update({
             where: {
               id: detail.productId,
@@ -550,6 +615,8 @@ export class SalesService {
   ): Promise<SaleResponseDto> {
     await this.prisma.$transaction(
       async (prisma) => {
+        const centralWarehouse =
+          await this.getCentralWarehouse(prisma);
         const sale =
           await prisma.sale.findUnique({
             where: {
@@ -580,23 +647,57 @@ export class SalesService {
         }
 
         for (const detail of sale.details) {
+          const centralStock =
+            await prisma.warehouseStock.findUnique({
+              where: {
+                warehouseId_productId: {
+                  warehouseId: centralWarehouse.id,
+                  productId: detail.productId,
+                },
+              },
+              select: {
+                id: true,
+                stock: true,
+                reservedStock: true,
+              },
+            });
+
           if (
-            detail.product.stock <
+            !centralStock ||
+            centralStock.stock <
             detail.quantity
           ) {
             throw new BadRequestException(
-              `Stock insuficiente para "${detail.product.name}"`,
+              `Stock insuficiente para "${detail.product.name}" en ${centralWarehouse.name}`,
             );
           }
 
           if (
-            detail.product.reservedStock <
+            centralStock.reservedStock <
             detail.quantity
           ) {
             throw new BadRequestException(
-              `La reserva de "${detail.product.name}" es inconsistente`,
+              `La reserva de "${detail.product.name}" en ${centralWarehouse.name} es inconsistente`,
             );
           }
+
+          const updatedCentralStock =
+            await prisma.warehouseStock.update({
+              where: {
+                id: centralStock.id,
+              },
+              data: {
+                stock: {
+                  decrement: detail.quantity,
+                },
+                reservedStock: {
+                  decrement: detail.quantity,
+                },
+              },
+              select: {
+                stock: true,
+              },
+            });
 
           await prisma.product.update({
             where: {
@@ -609,6 +710,20 @@ export class SalesService {
               reservedStock: {
                 decrement: detail.quantity,
               },
+            },
+          });
+
+          await prisma.inventoryMovement.create({
+            data: {
+              warehouseId: centralWarehouse.id,
+              productId: detail.productId,
+              userId,
+              type: $Enums.InventoryMovementType.SALE_OUT,
+              quantity: detail.quantity,
+              previousStock: centralStock.stock,
+              newStock: updatedCentralStock.stock,
+              referenceId: sale.id,
+              observations: `Venta ${sale.saleNumber} confirmada`,
             },
           });
         }
@@ -721,7 +836,10 @@ export class SalesService {
     await this.prisma.$transaction(
       async (prisma) => {
         if (updateSaleDto.details) {
-          const { preparedDetails } =
+          const {
+            centralWarehouse,
+            preparedDetails,
+          } =
             await this.validateAndPrepareDetails(
               finalClientId,
               updateSaleDto.details,
@@ -729,6 +847,23 @@ export class SalesService {
             );
 
           for (const oldDetail of current.details) {
+            await prisma.warehouseStock.update({
+              where: {
+                warehouseId_productId: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    oldDetail.productId,
+                },
+              },
+              data: {
+                reservedStock: {
+                  decrement:
+                    oldDetail.quantity,
+                },
+              },
+            });
+
             await prisma.product.update({
               where: {
                 id: oldDetail.productId,
@@ -749,6 +884,23 @@ export class SalesService {
           });
 
           for (const newDetail of preparedDetails) {
+            await prisma.warehouseStock.update({
+              where: {
+                warehouseId_productId: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    newDetail.productId,
+                },
+              },
+              data: {
+                reservedStock: {
+                  increment:
+                    newDetail.quantity,
+                },
+              },
+            });
+
             await prisma.product.update({
               where: {
                 id: newDetail.productId,
@@ -838,6 +990,7 @@ export class SalesService {
 
   async cancel(
     id: string,
+    userId: number,
   ): Promise<SaleResponseDto> {
     const sale =
       await this.prisma.sale.findUnique({
@@ -870,11 +1023,31 @@ export class SalesService {
 
     await this.prisma.$transaction(
       async (prisma) => {
+        const centralWarehouse =
+          await this.getCentralWarehouse(prisma);
+
         for (const detail of sale.details) {
           if (
             sale.status ===
             $Enums.SaleStatus.PENDING
           ) {
+            await prisma.warehouseStock.update({
+              where: {
+                warehouseId_productId: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    detail.productId,
+                },
+              },
+              data: {
+                reservedStock: {
+                  decrement:
+                    detail.quantity,
+                },
+              },
+            });
+
             await prisma.product.update({
               where: {
                 id: detail.productId,
@@ -892,6 +1065,52 @@ export class SalesService {
             sale.status ===
             $Enums.SaleStatus.CONFIRMED
           ) {
+            const quantityToRestore =
+              detail.quantity -
+              detail.returnedQuantity;
+            const centralStock =
+              await prisma.warehouseStock.findUnique({
+                where: {
+                  warehouseId_productId: {
+                    warehouseId:
+                      centralWarehouse.id,
+                    productId:
+                      detail.productId,
+                  },
+                },
+                select: {
+                  stock: true,
+                },
+              });
+            const updatedCentralStock =
+              await prisma.warehouseStock.upsert({
+                where: {
+                  warehouseId_productId: {
+                    warehouseId:
+                      centralWarehouse.id,
+                    productId:
+                      detail.productId,
+                  },
+                },
+                create: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    detail.productId,
+                  stock:
+                    quantityToRestore,
+                },
+                update: {
+                  stock: {
+                    increment:
+                      quantityToRestore,
+                  },
+                },
+                select: {
+                  stock: true,
+                },
+              });
+
             await prisma.product.update({
               where: {
                 id: detail.productId,
@@ -899,11 +1118,31 @@ export class SalesService {
               data: {
                 stock: {
                   increment:
-                    detail.quantity -
-                    detail.returnedQuantity,
+                    quantityToRestore,
                 },
               },
             });
+
+            if (quantityToRestore > 0) {
+              await prisma.inventoryMovement.create({
+                data: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    detail.productId,
+                  userId,
+                  type: $Enums.InventoryMovementType.SALE_RETURN_IN,
+                  quantity:
+                    quantityToRestore,
+                  previousStock:
+                    centralStock?.stock || 0,
+                  newStock:
+                    updatedCentralStock.stock,
+                  referenceId: sale.id,
+                  observations: `Anulación de venta ${sale.saleNumber}`,
+                },
+              });
+            }
           }
         }
 
@@ -1051,6 +1290,8 @@ export class SalesService {
     const result =
       await this.prisma.$transaction(
         async (prisma) => {
+          const centralWarehouse =
+            await this.getCentralWarehouse(prisma);
           const saleReturn =
             await prisma.saleReturn.create({
               data: {
@@ -1099,6 +1340,67 @@ export class SalesService {
                 stock: {
                   increment: item.quantity,
                 },
+              },
+            });
+
+            const centralStock =
+              await prisma.warehouseStock.findUnique({
+                where: {
+                  warehouseId_productId: {
+                    warehouseId:
+                      centralWarehouse.id,
+                    productId:
+                      item.saleDetail.productId,
+                  },
+                },
+                select: {
+                  stock: true,
+                },
+              });
+            const updatedCentralStock =
+              await prisma.warehouseStock.upsert({
+                where: {
+                  warehouseId_productId: {
+                    warehouseId:
+                      centralWarehouse.id,
+                    productId:
+                      item.saleDetail.productId,
+                  },
+                },
+                create: {
+                  warehouseId:
+                    centralWarehouse.id,
+                  productId:
+                    item.saleDetail.productId,
+                  stock: item.quantity,
+                },
+                update: {
+                  stock: {
+                    increment:
+                      item.quantity,
+                  },
+                },
+                select: {
+                  stock: true,
+                },
+              });
+
+            await prisma.inventoryMovement.create({
+              data: {
+                warehouseId:
+                  centralWarehouse.id,
+                productId:
+                  item.saleDetail.productId,
+                userId,
+                type: $Enums.InventoryMovementType.SALE_RETURN_IN,
+                quantity: item.quantity,
+                previousStock:
+                  centralStock?.stock || 0,
+                newStock:
+                  updatedCentralStock.stock,
+                referenceId:
+                  saleReturn.id,
+                observations: `Devolución de venta ${sale.saleNumber}`,
               },
             });
           }
@@ -1245,19 +1547,32 @@ export class SalesService {
   }
 
   async getLowStockProducts() {
-    const products =
-      await this.prisma.product.findMany({
+    const centralWarehouse =
+      await this.getCentralWarehouse();
+    const stocks =
+      await this.prisma.warehouseStock.findMany({
+        where: {
+          warehouseId: centralWarehouse.id,
+        },
+        include: {
+          product: true,
+        },
         orderBy: {
-          name: 'asc',
+          product: {
+            name: 'asc',
+          },
         },
       });
 
-    return products
-      .map((product) => ({
-        ...product,
+    return stocks
+      .map((stock) => ({
+        ...stock.product,
+        stock: stock.stock,
+        reservedStock:
+          stock.reservedStock,
         availableStock:
-          product.stock -
-          product.reservedStock,
+          stock.stock -
+          stock.reservedStock,
       }))
       .filter(
         (product) =>
