@@ -12,7 +12,7 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('kpi')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   getKPI(@Query() filters: DashboardFiltersDto) {
     return this.dashboardService.getKPI(filters);
   }
@@ -60,7 +60,7 @@ export class DashboardController {
   }
 
   @Get('low-stock')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   getLowStock() {
     return this.dashboardService.getLowStock();
   }

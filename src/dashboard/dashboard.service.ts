@@ -11,11 +11,15 @@ export class DashboardService {
     const dateFilter: any = {};
 
     if (dateFrom) {
-      dateFilter.gte = new Date(dateFrom);
+      const start = new Date(dateFrom);
+      start.setHours(0, 0, 0, 0);
+      dateFilter.gte = start;
     }
 
     if (dateTo) {
-      dateFilter.lte = new Date(dateTo);
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      dateFilter.lte = end;
     }
 
     return Object.keys(dateFilter).length > 0 ? dateFilter : undefined;
@@ -43,7 +47,7 @@ export class DashboardService {
     const dateFilter = this.buildDateFilter(filters.dateFrom, filters.dateTo);
 
     if (dateFilter) {
-      where.date = dateFilter;
+      where.confirmedAt = dateFilter;
     }
 
     const clientFilter = this.buildClientFilter(filters);
@@ -72,50 +76,104 @@ export class DashboardService {
     return Math.floor(diff / (1000 * 60 * 60 * 24));
   }
 
-  async getKPI(filters: DashboardFiltersDto) {
+  async getOverview() {
     const today = this.startOfToday();
     const startOfMonth = this.startOfMonth();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const baseSaleWhere = this.buildSaleWhere(filters);
-
-    const salesToday = await this.prisma.sale.aggregate({
-      where: {
-        ...baseSaleWhere,
-        date: {
-          gte: today,
+    const [
+      salesToday,
+      salesMonth,
+      salesWithDebt,
+      activeClients,
+      paymentsToday,
+      warehouses,
+    ] = await Promise.all([
+      this.prisma.sale.aggregate({
+        where: {
+          status: $Enums.SaleStatus.CONFIRMED,
+          confirmedAt: {
+            gte: today,
+          },
         },
-      },
-      _sum: {
-        total: true,
-      },
-    });
-
-    const salesMonth = await this.prisma.sale.aggregate({
-      where: {
-        ...baseSaleWhere,
-        date: {
-          gte: startOfMonth,
+        _sum: {
+          total: true,
         },
-      },
-      _sum: {
-        total: true,
-      },
-    });
-
-    const salesWithDebt = await this.prisma.sale.findMany({
-      where: {
-        ...baseSaleWhere,
-        paymentStatus: {
-          in: [
-            $Enums.PaymentStatus.PENDING,
-            $Enums.PaymentStatus.PARTIALLY_PAID,
-          ],
+      }),
+      this.prisma.sale.aggregate({
+        where: {
+          status: $Enums.SaleStatus.CONFIRMED,
+          confirmedAt: {
+            gte: startOfMonth,
+          },
         },
-      },
-      include: {
-        payments: true,
-      },
-    });
+        _sum: {
+          total: true,
+        },
+      }),
+      this.prisma.sale.findMany({
+        where: {
+          status: $Enums.SaleStatus.CONFIRMED,
+          paymentStatus: {
+            in: [
+              $Enums.PaymentStatus.PENDING,
+              $Enums.PaymentStatus.PARTIALLY_PAID,
+            ],
+          },
+        },
+        select: {
+          total: true,
+          dueDate: true,
+          payments: {
+            select: {
+              amount: true,
+            },
+          },
+        },
+      }),
+      this.prisma.sale.groupBy({
+        by: ['clientId'],
+        where: {
+          status: $Enums.SaleStatus.CONFIRMED,
+          confirmedAt: {
+            gte: thirtyDaysAgo,
+          },
+        },
+        _count: {
+          clientId: true,
+        },
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          receivedAt: {
+            gte: today,
+          },
+        },
+        _sum: {
+          amount: true,
+        },
+      }),
+      this.prisma.warehouse.findMany({
+        where: {
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          isDefault: true,
+          stocks: {
+            select: {
+              stock: true,
+              reservedStock: true,
+              minStock: true,
+            },
+          },
+        },
+        orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+      }),
+    ]);
 
     const totalDebt = salesWithDebt.reduce((sum, sale) => {
       const paid = sale.payments.reduce(
@@ -126,83 +184,66 @@ export class DashboardService {
       return sum + Math.max(sale.total - paid, 0);
     }, 0);
 
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const activeClients = await this.prisma.sale.groupBy({
-      by: ['clientId'],
-      where: {
-        ...baseSaleWhere,
-        date: {
-          gte: thirtyDaysAgo,
-        },
-      },
-      _count: {
-        clientId: true,
-      },
-    });
-
-    const stock = await this.prisma.product.aggregate({
-      _sum: {
-        stock: true,
-      },
-    });
-
-    const products = await this.prisma.product.findMany({
-      select: {
-        stock: true,
-        minStock: true,
-      },
-    });
-
-    const stockAlerts = products.filter(
-      (product) => product.minStock > 0 && product.stock <= product.minStock,
+    const now = new Date();
+    const overdueAccounts = salesWithDebt.filter(
+      (sale) => sale.dueDate && sale.dueDate < now,
     ).length;
 
-    const paymentsToday = await this.prisma.payment.aggregate({
-      where: {
-        receivedAt: {
-          gte: today,
-        },
-      },
-      _sum: {
-        amount: true,
-      },
+    const stockByWarehouse = warehouses.map((warehouse) => {
+      const totalStock = warehouse.stocks.reduce(
+        (sum, item) => sum + item.stock,
+        0,
+      );
+      const reservedStock = warehouse.stocks.reduce(
+        (sum, item) => sum + item.reservedStock,
+        0,
+      );
+
+      return {
+        id: warehouse.id,
+        name: warehouse.name,
+        code: warehouse.code,
+        isDefault: warehouse.isDefault,
+        totalStock,
+        reservedStock,
+        availableStock: totalStock - reservedStock,
+        productsCount: warehouse.stocks.filter((item) => item.stock > 0).length,
+      };
     });
 
-    const purchasesMonth = await this.prisma.purchase.aggregate({
-      where: {
-        status: $Enums.PurchaseStatus.RECEIVED,
-        date: {
-          gte: startOfMonth,
-        },
-      },
-      _sum: {
-        total: true,
-      },
-    });
-
-    const pendingPurchases = await this.prisma.purchase.count({
-      where: {
-        status: $Enums.PurchaseStatus.PENDING,
-      },
-    });
-
-    const profitSummary = await this.getProfitSummary(filters);
+    const centralWarehouse = warehouses.find(
+      (warehouse) => warehouse.isDefault,
+    );
+    const stockAlerts =
+      centralWarehouse?.stocks.filter(
+        (item) =>
+          item.minStock > 0 && item.stock - item.reservedStock <= item.minStock,
+      ).length ?? 0;
 
     return {
       salesToday: salesToday._sum.total || 0,
       salesMonth: salesMonth._sum.total || 0,
-      estimatedProfit: profitSummary.estimatedProfit,
-      profitMargin: profitSummary.profitMargin,
       activeClients: activeClients.length,
-      totalStock: stock._sum.stock || 0,
       totalDebt,
       collectionToday: paymentsToday._sum.amount || 0,
-      purchasesMonth: purchasesMonth._sum.total || 0,
-      pendingPurchases,
       stockAlerts,
+      overdueAccounts,
+      totalStock: stockByWarehouse.reduce(
+        (sum, warehouse) => sum + warehouse.totalStock,
+        0,
+      ),
+      availableStock: stockByWarehouse.reduce(
+        (sum, warehouse) => sum + warehouse.availableStock,
+        0,
+      ),
+      stockByWarehouse,
+      generatedAt: new Date(),
     };
+  }
+
+  async getKPI(_filters: DashboardFiltersDto) {
+    void _filters;
+    return this.getOverview();
   }
 
   async getProfitSummary(filters: DashboardFiltersDto) {
@@ -273,18 +314,22 @@ export class DashboardService {
     const sales = await this.prisma.sale.findMany({
       where,
       select: {
-        date: true,
+        confirmedAt: true,
         total: true,
       },
       orderBy: {
-        date: 'asc',
+        confirmedAt: 'asc',
       },
     });
 
     const dateMap = new Map<string, number>();
 
     for (const sale of sales) {
-      const key = sale.date.toISOString().split('T')[0];
+      if (!sale.confirmedAt) {
+        continue;
+      }
+
+      const key = sale.confirmedAt.toISOString().split('T')[0];
       dateMap.set(key, (dateMap.get(key) || 0) + sale.total);
     }
 
@@ -358,7 +403,7 @@ export class DashboardService {
     const dateFilter = this.buildDateFilter(filters.dateFrom, filters.dateTo);
 
     if (dateFilter) {
-      saleFilter.date = dateFilter;
+      saleFilter.confirmedAt = dateFilter;
     }
 
     const clientFilter = this.buildClientFilter(filters);
@@ -447,7 +492,7 @@ export class DashboardService {
     const dateFilter = this.buildDateFilter(filters.dateFrom, filters.dateTo);
 
     if (dateFilter) {
-      where.date = dateFilter;
+      where.confirmedAt = dateFilter;
     }
 
     const clientFilter = this.buildClientFilter(filters);
@@ -467,7 +512,7 @@ export class DashboardService {
         payments: true,
       },
       orderBy: {
-        date: 'asc',
+        confirmedAt: 'asc',
       },
     });
 
@@ -506,8 +551,8 @@ export class DashboardService {
           location: sale.client.location?.name || '-',
           totalDebt: debt,
           totalSales: 1,
-          oldestDebtDate: sale.date,
-          daysWithoutPayment: this.daysBetween(sale.date),
+          oldestDebtDate: sale.confirmedAt ?? sale.date,
+          daysWithoutPayment: this.daysBetween(sale.confirmedAt ?? sale.date),
           riskLevel: 'BAJO',
         });
 
@@ -517,9 +562,11 @@ export class DashboardService {
       existing.totalDebt += debt;
       existing.totalSales += 1;
 
-      if (sale.date < existing.oldestDebtDate) {
-        existing.oldestDebtDate = sale.date;
-        existing.daysWithoutPayment = this.daysBetween(sale.date);
+      const saleDate = sale.confirmedAt ?? sale.date;
+
+      if (saleDate < existing.oldestDebtDate) {
+        existing.oldestDebtDate = saleDate;
+        existing.daysWithoutPayment = this.daysBetween(saleDate);
       }
     }
 
@@ -542,29 +589,60 @@ export class DashboardService {
   }
 
   async getLowStock() {
-    const products = await this.prisma.product.findMany({
-      include: {
-        category: true,
-        provider: true,
+    const warehouse = await this.prisma.warehouse.findFirst({
+      where: {
+        isDefault: true,
       },
-      orderBy: {
-        stock: 'asc',
+      select: {
+        stocks: {
+          select: {
+            stock: true,
+            reservedStock: true,
+            minStock: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                unit: true,
+                category: {
+                  select: {
+                    name: true,
+                  },
+                },
+                provider: {
+                  select: {
+                    companyName: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: {
+            stock: 'asc',
+          },
+        },
       },
     });
 
-    return products
+    return (warehouse?.stocks ?? [])
       .filter(
-        (product) => product.minStock > 0 && product.stock <= product.minStock,
+        (item) =>
+          item.minStock > 0 && item.stock - item.reservedStock <= item.minStock,
       )
-      .map((product) => ({
-        productId: product.id,
-        product: product.name,
-        category: product.category?.name || 'Sin categoría',
-        provider: product.provider?.companyName || '-',
-        stock: product.stock,
-        minStock: product.minStock,
-        unit: product.unit,
-        missingQuantity: Math.max(product.minStock - product.stock, 0),
+      .map((item) => ({
+        productId: item.product.id,
+        product: item.product.name,
+        category: item.product.category?.name || 'Sin categoría',
+        provider: item.product.provider?.companyName || '-',
+        stock: item.stock,
+        reservedStock: item.reservedStock,
+        availableStock: item.stock - item.reservedStock,
+        minStock: item.minStock,
+        unit: item.product.unit,
+        missingQuantity: Math.max(
+          item.minStock - (item.stock - item.reservedStock),
+          0,
+        ),
       }));
   }
 
@@ -587,7 +665,7 @@ export class DashboardService {
         },
       },
       orderBy: {
-        date: 'desc',
+        confirmedAt: 'desc',
       },
       take: 10,
     });
@@ -595,7 +673,7 @@ export class DashboardService {
     return sales.map((sale) => ({
       id: sale.id,
       saleNumber: sale.saleNumber,
-      date: sale.date,
+      date: sale.confirmedAt ?? sale.date,
       clientName: sale.client.fullName,
       location: sale.client.location?.name || '-',
       total: sale.total,
@@ -649,11 +727,8 @@ export class DashboardService {
     }));
   }
 
-    async getPurchasesSummary(filters: DashboardFiltersDto) {
-    const dateFilter = this.buildDateFilter(
-      filters.dateFrom,
-      filters.dateTo,
-    );
+  async getPurchasesSummary(filters: DashboardFiltersDto) {
+    const dateFilter = this.buildDateFilter(filters.dateFrom, filters.dateTo);
 
     const receivedWhere: any = {
       status: $Enums.PurchaseProviderStatus.RECEIVED,
@@ -750,9 +825,7 @@ export class DashboardService {
       }),
     ]);
 
-    const providerIds = byProvider.map(
-      (item) => item.providerId,
-    );
+    const providerIds = byProvider.map((item) => item.providerId);
 
     const providers =
       providerIds.length > 0
@@ -770,10 +843,7 @@ export class DashboardService {
         : [];
 
     const providerMap = new Map(
-      providers.map((provider) => [
-        provider.id,
-        provider.companyName,
-      ]),
+      providers.map((provider) => [provider.id, provider.companyName]),
     );
 
     return {
@@ -792,9 +862,7 @@ export class DashboardService {
 
       topProviders: byProvider.map((item) => ({
         providerId: item.providerId,
-        provider:
-          providerMap.get(item.providerId) ??
-          'Proveedor desconocido',
+        provider: providerMap.get(item.providerId) ?? 'Proveedor desconocido',
         total: item._sum.total ?? 0,
         purchases: item._count.id,
       })),
@@ -817,7 +885,7 @@ export class DashboardService {
       startDate.setDate(startDate.getDate() - 30);
     }
 
-    saleFilter.date = {
+    saleFilter.confirmedAt = {
       gte: startDate,
       lte: endDate,
     };
@@ -872,7 +940,7 @@ export class DashboardService {
           quantitySold: detail.quantity,
           totalSold: detail.subtotal,
           currentStock: detail.product.stock,
-          lastSale: detail.sale.date,
+          lastSale: detail.sale.confirmedAt ?? detail.sale.date,
         });
 
         continue;
@@ -881,8 +949,10 @@ export class DashboardService {
       current.quantitySold += detail.quantity;
       current.totalSold += detail.subtotal;
 
-      if (!current.lastSale || detail.sale.date > current.lastSale) {
-        current.lastSale = detail.sale.date;
+      const saleDate = detail.sale.confirmedAt ?? detail.sale.date;
+
+      if (!current.lastSale || saleDate > current.lastSale) {
+        current.lastSale = saleDate;
       }
     }
 
