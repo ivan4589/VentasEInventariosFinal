@@ -28,7 +28,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       where: { id: payload.sub },
     });
 
-    if (!user) return null;
+    if (!user || !user.isActive) return null;
 
     const { password, ...result } = user;
     return result;
