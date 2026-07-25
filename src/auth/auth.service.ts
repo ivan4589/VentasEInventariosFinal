@@ -19,11 +19,17 @@ export class AuthService {
 
   async validateUser(email: string, password: string): Promise<any> {
     const user = await this.prisma.user.findUnique({
-      where: { email },
+      where: { email: email.trim().toLowerCase() },
     });
 
     if (!user) {
       throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException(
+        'Tu cuenta está inactiva. Contacta al administrador',
+      );
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -38,8 +44,14 @@ export class AuthService {
   }
 
   async login(user: any) {
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
     const payload = {
       sub: user.id,
+      name: user.name,
       email: user.email,
       role: user.role,
     };
