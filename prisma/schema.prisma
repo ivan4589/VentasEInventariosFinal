@@ -49,6 +49,7 @@ model User {
   collectionAssignmentsCreated CollectionAssignment[] @relation("CollectionAssignedBy")
   administrationActions        UserAdministrationLog[] @relation("UserAdministrationActor")
   administrationEvents         UserAdministrationLog[] @relation("UserAdministrationTarget")
+  saleWhatsAppLogs              SaleWhatsAppLog[]
 }
 
 model UserAdministrationLog {
@@ -83,6 +84,7 @@ model Client {
   locationId     String
   location       Location   @relation(fields: [locationId], references: [id])
   phone          String?
+  whatsappConsent Boolean    @default(false)
   additionalInfo String?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
@@ -296,6 +298,7 @@ model Sale {
   payments             Payment[]
   returns              SaleReturn[]
   collectionAssignment CollectionAssignment?
+  whatsappLogs        SaleWhatsAppLog[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -308,6 +311,30 @@ model Sale {
   @@index([status])
   @@index([paymentStatus])
   @@map("sales")
+}
+
+enum WhatsAppSendStatus {
+  SENT
+  FAILED
+}
+
+model SaleWhatsAppLog {
+  id            String             @id @default(cuid())
+  saleId        String
+  sale          Sale               @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  userId        Int
+  user          User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  phoneNumber   String
+  status        WhatsAppSendStatus
+  metaMessageId String?
+  errorMessage  String?
+  createdAt     DateTime           @default(now())
+
+  @@index([saleId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("sale_whatsapp_logs")
 }
 
 model SaleDetail {

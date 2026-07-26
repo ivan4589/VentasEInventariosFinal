@@ -1,4 +1,10 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { $Enums } from '../../../generated/prisma/client';
 
 export class CreateClientDto {
@@ -21,6 +27,10 @@ export class CreateClientDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  whatsappConsent?: boolean;
 
   @IsOptional()
   @IsString()

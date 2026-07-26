@@ -36,6 +36,11 @@ export class SalesService {
         },
       },
       payments: true,
+      whatsappLogs: {
+        orderBy: {
+          createdAt: 'desc',
+        },
+      },
     };
   }
 
@@ -215,6 +220,14 @@ export class SalesService {
           ),
         )
       : await this.getPaidAmount(sale.id);
+    const lastWhatsAppLog =
+      sale.whatsappLogs?.[0];
+    const lastSuccessfulWhatsAppLog =
+      sale.whatsappLogs?.find(
+        (log: any) =>
+          log.status ===
+          $Enums.WhatsAppSendStatus.SENT,
+      );
 
     return {
       id: sale.id,
@@ -227,6 +240,8 @@ export class SalesService {
       clientLocation:
         sale.client?.location?.name || '',
       clientPhone: sale.client?.phone,
+      clientWhatsAppConsent:
+        sale.client?.whatsappConsent ?? false,
 
       userId: sale.userId,
       userName: sale.user?.name || '',
@@ -248,6 +263,15 @@ export class SalesService {
       observations: sale.observations,
       pdfUrl: sale.pdfUrl,
       cancelledPdfUrl: sale.cancelledPdfUrl,
+      whatsappLastSentAt:
+        lastSuccessfulWhatsAppLog?.createdAt,
+      whatsappMessageId:
+        lastSuccessfulWhatsAppLog?.metaMessageId,
+      whatsappLastError:
+        lastWhatsAppLog?.status ===
+        $Enums.WhatsAppSendStatus.FAILED
+          ? lastWhatsAppLog.errorMessage
+          : undefined,
 
       details:
         sale.details?.map((detail: any) => ({

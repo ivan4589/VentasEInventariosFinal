@@ -47,6 +47,8 @@ export class ClientsService {
         type: createClientDto.type,
         locationId: createClientDto.locationId,
         phone: createClientDto.phone,
+        whatsappConsent:
+          createClientDto.whatsappConsent ?? false,
         additionalInfo: createClientDto.additionalInfo,
       },
     });
@@ -72,6 +74,8 @@ export class ClientsService {
         type: updateClientDto.type,
         locationId: updateClientDto.locationId,
         phone: updateClientDto.phone,
+        whatsappConsent:
+          updateClientDto.whatsappConsent,
         additionalInfo: updateClientDto.additionalInfo,
       },
     });

@@ -22,6 +22,7 @@ export class SaleResponseDto {
   clientType: $Enums.ClientType;
   clientLocation?: string;
   clientPhone?: string;
+  clientWhatsAppConsent: boolean;
 
   userId: number;
   userName: string;
@@ -41,6 +42,9 @@ export class SaleResponseDto {
   observations?: string;
   pdfUrl?: string;
   cancelledPdfUrl?: string;
+  whatsappLastSentAt?: Date;
+  whatsappMessageId?: string;
+  whatsappLastError?: string;
 
   details: SaleDetailResponseDto[];
 
