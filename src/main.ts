@@ -5,7 +5,8 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app =
+    await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.enableCors({
     origin: ['http://localhost:5173'],
@@ -22,11 +23,12 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       transform: true,
-      
     }),
   );
 
-  await app.listen(3000);
+  app.setGlobalPrefix('api');
+
+  await app.listen(process.env.PORT ?? 3000);
 }
 
 bootstrap();

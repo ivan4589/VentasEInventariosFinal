@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -43,6 +43,7 @@ import { WarehouseTransfersModule } from './warehouse-transfers/warehouse-transf
     DashboardModule,
     WarehousesModule,
     CollectionsModule,
+    WhatsappModule,
     WarehouseTransfersModule,
   ],
   controllers: [AppController],
