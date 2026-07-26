@@ -7,6 +7,7 @@ export class ClientResponseDto {
   type: $Enums.ClientType;
   locationId: string;
   phone?: string;
+  whatsappConsent: boolean;
   additionalInfo?: string;
   createdAt: Date;
   updatedAt: Date;

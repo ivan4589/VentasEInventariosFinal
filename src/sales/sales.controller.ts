@@ -18,12 +18,15 @@ import { CreateSaleReturnDto } from './dto/create-sale-return.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { SendSaleWhatsAppDto } from './dto/send-sale-whatsapp.dto';
+import { WhatsAppService } from './whatsapp.service';
 
 @Controller('sales')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SalesController {
   constructor(
     private readonly salesService: SalesService,
+    private readonly whatsappService: WhatsAppService,
   ) {}
 
   @Get()
@@ -122,6 +125,23 @@ export class SalesController {
       id,
       updateSaleDto,
       req.user.role,
+    );
+  }
+
+  @Post(':id/whatsapp')
+  @Roles(
+    $Enums.Role.ADMIN,
+    $Enums.Role.VENDEDOR,
+  )
+  sendWhatsApp(
+    @Param('id') id: string,
+    @Body() dto: SendSaleWhatsAppDto,
+    @Request() req: any,
+  ) {
+    return this.whatsappService.sendSaleDocument(
+      id,
+      req.user.id,
+      dto.resend ?? false,
     );
   }
 
