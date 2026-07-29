@@ -210,6 +210,21 @@ export class AnalyticsReportsService {
     return { pdfUrl };
   }
 
+  async generateSalesMatrixPdf(
+    filters: AnalyticsReportFiltersDto,
+    actor: ReportActor,
+  ): Promise<{ pdfUrl: string }> {
+    this.validateAccess('sales-detail', actor.role);
+    const matrix = await this.salesMatrix(filters);
+    const html = this.buildSalesMatrixHtml(matrix);
+    const pdfUrl = await this.writePdf(
+      html,
+      `ventas-matriz-${new Date().toISOString().slice(0, 10)}`,
+    );
+
+    return { pdfUrl };
+  }
+
   private validateAccess(key: string, role: $Enums.Role): AnalyticsReportKey {
     if (!ANALYTICS_REPORT_KEYS.includes(key as AnalyticsReportKey)) {
       throw new NotFoundException('El reporte solicitado no existe');
@@ -693,6 +708,222 @@ export class AnalyticsReportsService {
       sections,
       'No existen ventas para los filtros seleccionados.',
     );
+  }
+
+  private async salesMatrix(filters: AnalyticsReportFiltersDto) {
+    const range = this.dateRange(filters);
+    const where: Prisma.SaleWhereInput = {
+      status: $Enums.SaleStatus.CONFIRMED,
+      ...(filters.clientId ? { clientId: filters.clientId } : {}),
+      ...(filters.userId ? { userId: filters.userId } : {}),
+      ...(filters.productId
+        ? { details: { some: { productId: filters.productId } } }
+        : {}),
+      ...(Object.keys(range).length ? { confirmedAt: range } : {}),
+    };
+    const sales = await this.prisma.sale.findMany({
+      where,
+      include: {
+        client: true,
+        details: {
+          include: {
+            product: {
+              include: {
+                provider: true,
+                category: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ client: { fullName: 'asc' } }, { confirmedAt: 'asc' }],
+    });
+
+    const products = Array.from(
+      new Map(
+        sales.flatMap((sale) =>
+          sale.details.map((detail) => [detail.productId, detail.product]),
+        ),
+      ).values(),
+    ).sort(
+      (a, b) =>
+        a.provider.companyName.localeCompare(b.provider.companyName, 'es') ||
+        a.category.name.localeCompare(b.category.name, 'es') ||
+        a.name.localeCompare(b.name, 'es'),
+    );
+    const clients = new Map<
+      string,
+      {
+        name: string;
+        quantities: Map<string, number>;
+        total: number;
+      }
+    >();
+
+    for (const sale of sales) {
+      const client = clients.get(sale.clientId) || {
+        name: sale.client.fullName,
+        quantities: new Map<string, number>(),
+        total: 0,
+      };
+      client.total += sale.total;
+
+      for (const detail of sale.details) {
+        const quantity = Math.max(
+          detail.quantity - detail.returnedQuantity,
+          0,
+        );
+        client.quantities.set(
+          detail.productId,
+          (client.quantities.get(detail.productId) || 0) + quantity,
+        );
+      }
+      clients.set(sale.clientId, client);
+    }
+
+    return {
+      products,
+      clients: Array.from(clients.values()).map((client) => ({
+        ...client,
+        total: this.roundMoney(client.total),
+      })),
+      periodLabel: this.periodLabel(filters),
+      generatedAt: new Date(),
+    };
+  }
+
+  private buildSalesMatrixHtml(
+    matrix: Awaited<ReturnType<AnalyticsReportsService['salesMatrix']>>,
+  ): string {
+    const productsPerPage = 8;
+    const productPages =
+      matrix.products.length > 0
+        ? Array.from(
+            { length: Math.ceil(matrix.products.length / productsPerPage) },
+            (_, index) =>
+              matrix.products.slice(
+                index * productsPerPage,
+                (index + 1) * productsPerPage,
+              ),
+          )
+        : [[]];
+
+    const pages = productPages
+      .map((products, pageIndex) => {
+        const providerGroups: Array<{
+          name: string;
+          count: number;
+          categories: Array<{ name: string; count: number }>;
+        }> = [];
+        for (const product of products) {
+          let provider = providerGroups[providerGroups.length - 1];
+          if (!provider || provider.name !== product.provider.companyName) {
+            provider = {
+              name: product.provider.companyName,
+              count: 0,
+              categories: [],
+            };
+            providerGroups.push(provider);
+          }
+          provider.count += 1;
+          let category = provider.categories[provider.categories.length - 1];
+          if (!category || category.name !== product.category.name) {
+            category = { name: product.category.name, count: 0 };
+            provider.categories.push(category);
+          }
+          category.count += 1;
+        }
+
+        const providerHeaders = providerGroups
+          .map(
+            (provider) =>
+              `<th colspan="${provider.count}">${this.escapeHtml(provider.name)}</th>`,
+          )
+          .join('');
+        const categoryHeaders = providerGroups
+          .flatMap((provider) =>
+            provider.categories.map(
+              (category) =>
+                `<th colspan="${category.count}">${this.escapeHtml(category.name)}</th>`,
+            ),
+          )
+          .join('');
+        const productHeaders = products
+          .map((product) => `<th>${this.escapeHtml(product.name)}</th>`)
+          .join('');
+        const rows = matrix.clients
+          .map(
+            (client, clientIndex) => `
+              <tr>
+                <td class="number">${clientIndex + 1}</td>
+                <td class="client">${this.escapeHtml(client.name)}</td>
+                ${products
+                  .map((product) => {
+                    const quantity = client.quantities.get(product.id) || 0;
+                    return `<td class="quantity">${quantity ? this.escapeHtml(this.formatValue(this.roundQuantity(quantity), 'number')) : ''}</td>`;
+                  })
+                  .join('')}
+                <td class="observations">Total venta: ${this.escapeHtml(
+                  this.formatValue(client.total, 'currency'),
+                )}</td>
+              </tr>`,
+          )
+          .join('');
+
+        return `
+          <section class="matrix-page ${pageIndex ? 'page-break' : ''}">
+            <header>
+              <h1>REPORTE MATRIZ DE VENTAS POR CLIENTE</h1>
+              ${matrix.periodLabel ? `<p><b>Periodo:</b> ${this.escapeHtml(matrix.periodLabel)}</p>` : ''}
+              <p><b>Productos:</b> página ${pageIndex + 1} de ${productPages.length}</p>
+            </header>
+            ${
+              matrix.clients.length && products.length
+                ? `<table>
+                    <thead>
+                      <tr>
+                        <th rowspan="3" class="number">N.º</th>
+                        <th rowspan="3" class="client">Cliente</th>
+                        ${providerHeaders}
+                        <th rowspan="3" class="observations">Observaciones</th>
+                      </tr>
+                      <tr>${categoryHeaders}</tr>
+                      <tr>${productHeaders}</tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                  </table>`
+                : '<p class="empty">No existen ventas confirmadas para el rango seleccionado.</p>'
+            }
+          </section>`;
+      })
+      .join('');
+
+    return `<!doctype html>
+      <html lang="es">
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            * { box-sizing: border-box; }
+            body { color: #111; font-family: Arial, sans-serif; font-size: 8px; margin: 0; }
+            .matrix-page { width: 100%; }
+            .page-break { break-before: page; }
+            header { margin-bottom: 8px; text-align: center; }
+            h1 { font-size: 15px; margin: 0 0 4px; }
+            p { margin: 2px 0; }
+            table { border-collapse: collapse; table-layout: fixed; width: 100%; }
+            th, td { border: 1px solid #111; padding: 4px 2px; }
+            th { background: #e8efe9; font-weight: 700; text-align: center; }
+            thead { display: table-header-group; }
+            tr { break-inside: avoid; }
+            .number { text-align: center; width: 24px; }
+            .client { min-width: 135px; width: 135px; }
+            .quantity { text-align: center; }
+            .observations { min-width: 105px; width: 105px; }
+            .empty { border: 1px dashed #777; padding: 15px; text-align: center; }
+          </style>
+        </head>
+        <body>${pages}</body>
+      </html>`;
   }
 
   private async collections(

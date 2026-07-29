@@ -65,6 +65,18 @@ export class ReportsController {
     });
   }
 
+  @Post('pdf/sales-detail/matrix')
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  generateSalesMatrixPdf(
+    @Query() filters: AnalyticsReportFiltersDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.analyticsReportsService.generateSalesMatrixPdf(filters, {
+      id: req.user.id,
+      role: req.user.role,
+    });
+  }
+
   @Get('inventory')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   getInventory() {
