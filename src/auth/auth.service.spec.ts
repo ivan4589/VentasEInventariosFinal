@@ -1,4 +1,5 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -6,60 +7,84 @@ import { AuthService } from './auth.service';
 
 describe('AuthService', () => {
   const prisma = {
-    user: {
-      findUnique: jest.fn(),
-      update: jest.fn(),
-    },
+    $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
+    $transaction: jest.fn(),
   };
   const jwt = {
-    sign: jest.fn().mockReturnValue('signed-token'),
+    signAsync: jest.fn(),
+  };
+  const config = {
+    get: jest.fn(),
   };
 
   let service: AuthService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.$executeRaw.mockResolvedValue(1);
     service = new AuthService(
       prisma as unknown as PrismaService,
       jwt as unknown as JwtService,
+      config as unknown as ConfigService,
     );
   });
 
   it('rechaza el inicio de sesión de un usuario inactivo', async () => {
-    prisma.user.findUnique.mockResolvedValue({
-      id: 4,
-      name: 'Usuario Inactivo',
-      email: 'inactivo@prueba.com',
-      password: await bcrypt.hash('Segura123', 10),
-      role: 'VENDEDOR',
-      isActive: false,
-    });
+    prisma.$queryRaw.mockResolvedValueOnce([
+      {
+        id: 4,
+        name: 'Usuario Inactivo',
+        email: 'inactivo@prueba.com',
+        password: await bcrypt.hash('Segura123!', 12),
+        role: 'VENDEDOR',
+        requestedRole: 'VENDEDOR',
+        status: 'DISABLED',
+        isActive: false,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        twoFactorEnabled: false,
+        securityVersion: 1,
+      },
+    ]);
 
     await expect(
-      service.validateUser('INACTIVO@PRUEBA.COM', 'Segura123'),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+      service.login({
+        email: 'INACTIVO@PRUEBA.COM',
+        password: 'Segura123!',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
   });
 
-  it('registra el último acceso e incluye nombre y rol en el token', async () => {
-    prisma.user.update.mockResolvedValue({});
+  it('crea un desafío de segundo factor para una cuenta activa', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([
+      {
+        id: 1,
+        name: 'Administrador',
+        email: 'admin@prueba.com',
+        password: await bcrypt.hash('Segura123!', 12),
+        role: 'ADMIN',
+        requestedRole: null,
+        status: 'ACTIVE',
+        isActive: true,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        twoFactorEnabled: false,
+        securityVersion: 1,
+      },
+    ]);
 
     const result = await service.login({
-      id: 1,
-      name: 'Administrador',
-      email: 'admin@prueba.com',
-      role: 'ADMIN',
+      email: 'ADMIN@PRUEBA.COM',
+      password: 'Segura123!',
     });
 
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 1 },
-      data: { lastLoginAt: expect.any(Date) },
+    expect(result).toEqual({
+      requiresTwoFactorSetup: true,
+      challengeToken: expect.any(String),
     });
-    expect(jwt.sign).toHaveBeenCalledWith({
-      sub: 1,
-      name: 'Administrador',
-      email: 'admin@prueba.com',
-      role: 'ADMIN',
-    });
-    expect(result).toEqual({ access_token: 'signed-token' });
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(3);
   });
 });
