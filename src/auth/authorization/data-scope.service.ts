@@ -95,6 +95,32 @@ export class DataScopeService {
     return rows.filter((row) => allowed?.has(row.id));
   }
 
+  sanitizeSaleForActor<T extends Record<string, unknown>>(
+    sale: T,
+    actor: AuthorizationActor,
+  ): T {
+    if (actor.role !== $Enums.Role.COBRADOR) {
+      return sale;
+    }
+
+    const sanitized = { ...sale } as Record<string, unknown>;
+    delete sanitized.pdfUrl;
+    delete sanitized.cancelledPdfUrl;
+    delete sanitized.whatsappLastSentAt;
+    delete sanitized.whatsappMessageId;
+    delete sanitized.whatsappLastError;
+    delete sanitized.clientWhatsAppConsent;
+
+    return sanitized as T;
+  }
+
+  sanitizeSalesForActor<T extends Record<string, unknown>>(
+    sales: T[],
+    actor: AuthorizationActor,
+  ): T[] {
+    return sales.map((sale) => this.sanitizeSaleForActor(sale, actor));
+  }
+
   async filterPaymentsForActor<T extends { saleId: string }>(
     rows: T[],
     actor: AuthorizationActor,
