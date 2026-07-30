@@ -1,3 +1,4 @@
+# validation-revision: 2
 name: Validate RBAC
 
 on:
@@ -26,28 +27,36 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Validate backend
-        id: validation
-        continue-on-error: true
+      - name: Validate and record backend
         shell: bash
         run: |
-          set -o pipefail
-          npm ci
-          npx prisma validate
-          npx prisma generate
-          npm run build
-          npm test -- --runInBand permissions.spec.ts auth
-      - name: Record validation result
-        shell: bash
-        run: |
+          set +e
+          LOG=.github/rbac-validation-result.txt
           mkdir -p .github
-          {
-            echo "RBAC_BACKEND_VALIDATION_OUTCOME=${{ steps.validation.outcome }}"
-            echo "Validated at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } > .github/rbac-validation-result.txt
+          : > "$LOG"
+          run_step() {
+            echo "" | tee -a "$LOG"
+            echo "===== $1 =====" | tee -a "$LOG"
+            shift
+            "$@" 2>&1 | tee -a "$LOG"
+            CODE=${PIPESTATUS[0]}
+            echo "EXIT_CODE=$CODE" | tee -a "$LOG"
+            return $CODE
+          }
+
+          STATUS=0
+          run_step "npm ci" npm ci || STATUS=$?
+          if [ "$STATUS" -eq 0 ]; then run_step "prisma validate" npx prisma validate || STATUS=$?; fi
+          if [ "$STATUS" -eq 0 ]; then run_step "prisma generate" npx prisma generate || STATUS=$?; fi
+          if [ "$STATUS" -eq 0 ]; then run_step "npm run build" npm run build || STATUS=$?; fi
+          if [ "$STATUS" -eq 0 ]; then run_step "RBAC and auth tests" npm test -- --runInBand permissions.spec.ts auth || STATUS=$?; fi
+          echo "" | tee -a "$LOG"
+          echo "RBAC_BACKEND_FINAL_STATUS=$STATUS" | tee -a "$LOG"
+          echo "Validated at $(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee -a "$LOG"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/rbac-validation-result.txt
-          git commit -m "Registra validación de roles y permisos"
+          git add "$LOG"
+          git commit -m "Registra detalle de validación RBAC"
           git push origin HEAD:agent/roles-permisos-alcance-datos
-          test "${{ steps.validation.outcome }}" = "success"
+          exit "$STATUS"
