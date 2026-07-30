@@ -59,7 +59,8 @@ export class SalesController {
       dateTo: dateTo ? new Date(dateTo) : undefined,
     });
 
-    return this.dataScope.filterSalesForActor(sales, req.user);
+    const scoped = await this.dataScope.filterSalesForActor(sales, req.user);
+    return this.dataScope.sanitizeSalesForActor(scoped, req.user);
   }
 
   @Get('low-stock')
@@ -77,7 +78,8 @@ export class SalesController {
   )
   async findOne(@Param('id') id: string, @Request() req: any) {
     await this.dataScope.assertCanViewSale(id, req.user);
-    return this.salesService.findOne(id);
+    const sale = await this.salesService.findOne(id);
+    return this.dataScope.sanitizeSaleForActor(sale, req.user);
   }
 
   @Post()
