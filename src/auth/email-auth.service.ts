@@ -91,7 +91,7 @@ export class EmailAuthService extends AuthService {
       user.id,
       expiresInMinutes,
     );
-    const verificationUrl = `${this.frontendUrl()}/verificar-correo?token=${encodeURIComponent(token)}`;
+    const verificationUrl = `${this.emailFrontendUrl()}/verificar-correo?token=${encodeURIComponent(token)}`;
 
     await this.auditSecurityEvent(
       'USER_REGISTERED',
@@ -146,7 +146,7 @@ export class EmailAuthService extends AuthService {
       user.id,
       expiresInMinutes,
     );
-    const verificationUrl = `${this.frontendUrl()}/verificar-correo?token=${encodeURIComponent(token)}`;
+    const verificationUrl = `${this.emailFrontendUrl()}/verificar-correo?token=${encodeURIComponent(token)}`;
 
     const delivery = await this.securityEmail.sendVerificationEmail({
       to: user.email,
@@ -221,7 +221,7 @@ export class EmailAuthService extends AuthService {
       to: user.email,
       name: user.name,
       role: dto.role,
-      loginUrl: `${this.frontendUrl()}/login`,
+      loginUrl: `${this.emailFrontendUrl()}/login`,
     });
 
     return {
@@ -314,7 +314,7 @@ export class EmailAuthService extends AuthService {
     return Math.min(Math.max(Math.trunc(configured), 5), 1440);
   }
 
-  private frontendUrl() {
+  private emailFrontendUrl() {
     const value =
       this.configuration.get<string>('FRONTEND_URL') ||
       'http://localhost:5173';
