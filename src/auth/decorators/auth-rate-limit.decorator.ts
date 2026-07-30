@@ -7,6 +7,7 @@ export type AuthRateLimitOptions = {
   windowMs: number;
   blockMs?: number;
   includeEmail?: boolean;
+  bodyFields?: string[];
 };
 
 export const AuthRateLimit = (options: AuthRateLimitOptions) =>
