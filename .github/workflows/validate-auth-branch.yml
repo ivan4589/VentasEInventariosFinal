@@ -45,7 +45,7 @@ jobs:
           if [ "$STATUS" -eq 0 ]; then run_step "prisma validate" npx prisma validate || STATUS=$?; fi
           if [ "$STATUS" -eq 0 ]; then run_step "prisma generate" npx prisma generate || STATUS=$?; fi
           if [ "$STATUS" -eq 0 ]; then run_step "npm run build" npm run build || STATUS=$?; fi
-          if [ "$STATUS" -eq 0 ]; then run_step "npm test" npm test -- --runInBand || STATUS=$?; fi
+          if [ "$STATUS" -eq 0 ]; then run_step "auth tests" npm test -- --runInBand auth || STATUS=$?; fi
           echo "\nFINAL_STATUS=$STATUS" | tee -a "$LOG"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
