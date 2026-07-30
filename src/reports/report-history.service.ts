@@ -14,6 +14,7 @@ interface FindReportHistoryFilters {
   type?: $Enums.ReportType;
   dateFrom?: Date;
   dateTo?: Date;
+  userId?: number;
 }
 
 @Injectable()
@@ -31,12 +32,7 @@ export class ReportHistoryService {
       },
       include: {
         user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-          },
+          select: { id: true, name: true, email: true, role: true },
         },
       },
     });
@@ -45,51 +41,35 @@ export class ReportHistoryService {
   async findAll(filters?: FindReportHistoryFilters) {
     const where: any = {};
 
-    if (filters?.type) {
-      where.type = filters.type;
-    }
+    if (filters?.type) where.type = filters.type;
+    if (filters?.userId) where.userId = filters.userId;
 
     if (filters?.dateFrom || filters?.dateTo) {
       where.createdAt = {};
-
-      if (filters.dateFrom) {
-        where.createdAt.gte = filters.dateFrom;
-      }
-
-      if (filters.dateTo) {
-        where.createdAt.lte = filters.dateTo;
-      }
+      if (filters.dateFrom) where.createdAt.gte = filters.dateFrom;
+      if (filters.dateTo) where.createdAt.lte = filters.dateTo;
     }
 
     return this.prisma.reportHistory.findMany({
       where,
       include: {
         user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-          },
+          select: { id: true, name: true, email: true, role: true },
         },
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findOne(id: string) {
-    const history = await this.prisma.reportHistory.findUnique({
-      where: { id },
+  async findOne(id: string, userId?: number) {
+    const history = await this.prisma.reportHistory.findFirst({
+      where: {
+        id,
+        ...(userId ? { userId } : {}),
+      },
       include: {
         user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-          },
+          select: { id: true, name: true, email: true, role: true },
         },
       },
     });
