@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider     = "prisma-client"
   output       = "../generated/prisma"
@@ -19,6 +17,47 @@ enum Role {
   COBRADOR
 }
 
+enum UserStatus {
+  PENDING_EMAIL_VERIFICATION
+  PENDING_ADMIN_APPROVAL
+  ACTIVE
+  REJECTED
+  TEMPORARILY_LOCKED
+  DISABLED
+}
+
+enum SecurityTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  TWO_FACTOR_CHALLENGE
+}
+
+enum SecurityAuditAction {
+  USER_REGISTERED
+  EMAIL_VERIFICATION_REQUESTED
+  EMAIL_VERIFIED
+  REGISTRATION_APPROVED
+  REGISTRATION_REJECTED
+  LOGIN_SUCCEEDED
+  LOGIN_FAILED
+  ACCOUNT_LOCKED
+  ACCOUNT_UNLOCKED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
+  PASSWORD_CHANGED
+  TWO_FACTOR_SETUP_STARTED
+  TWO_FACTOR_ENABLED
+  TWO_FACTOR_DISABLED
+  TWO_FACTOR_VERIFIED
+  TWO_FACTOR_FAILED
+  TWO_FACTOR_RECOVERY_CODE_USED
+  TWO_FACTOR_RESET_BY_ADMIN
+  SESSION_CREATED
+  SESSION_REFRESHED
+  SESSION_REVOKED
+  ALL_SESSIONS_REVOKED
+}
+
 enum UserAdministrationAction {
   USER_CREATED
   USER_UPDATED
@@ -28,28 +67,157 @@ enum UserAdministrationAction {
 }
 
 model User {
-  id          Int       @id @default(autoincrement())
-  name        String
-  email       String    @unique
-  password    String
-  role        Role      @default(VENDEDOR)
-  isActive    Boolean   @default(true)
-  lastLoginAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                    Int        @id @default(autoincrement())
+  name                  String
+  email                 String     @unique
+  password              String
+  role                  Role       @default(VENDEDOR)
+  isActive              Boolean    @default(true)
+  status                UserStatus @default(ACTIVE)
+  requestedRole         Role?
+  phone                 String?
+  emailVerifiedAt       DateTime?
+  approvedAt            DateTime?
+  approvedById          Int?
+  rejectedAt            DateTime?
+  rejectionReason       String?
+  failedLoginAttempts   Int        @default(0)
+  lockedUntil           DateTime?
+  passwordChangedAt     DateTime?
+  mustChangePassword    Boolean    @default(false)
+  twoFactorEnabled      Boolean    @default(false)
+  twoFactorVerifiedAt   DateTime?
+  securityVersion       Int        @default(1)
+  lastLoginAt           DateTime?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
-  purchases                    Purchase[]
-  sales                        Sale[]
-  payments                     Payment[]
-  reportHistories              ReportHistory[]
-  saleReturns                  SaleReturn[]
-  warehouseTransfers           WarehouseTransfer[]
-  inventoryMovements           InventoryMovement[]
-  collectionAssignments        CollectionAssignment[] @relation("CollectionAssignee")
-  collectionAssignmentsCreated CollectionAssignment[] @relation("CollectionAssignedBy")
-  administrationActions        UserAdministrationLog[] @relation("UserAdministrationActor")
-  administrationEvents         UserAdministrationLog[] @relation("UserAdministrationTarget")
+  approvedBy                    User?                   @relation("UserApproval", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedUsers                 User[]                  @relation("UserApproval")
+  securityTokens                SecurityToken[]
+  authSessions                  AuthSession[]
+  twoFactorMethod               TwoFactorMethod?
+  twoFactorRecoveryCodes        TwoFactorRecoveryCode[]
+  loginAttempts                 LoginAttempt[]
+  securityAuditActions          SecurityAuditLog[]      @relation("SecurityAuditActor")
+  securityAuditTargets          SecurityAuditLog[]      @relation("SecurityAuditTarget")
+  purchases                     Purchase[]
+  sales                         Sale[]
+  payments                      Payment[]
+  reportHistories               ReportHistory[]
+  saleReturns                   SaleReturn[]
+  warehouseTransfers            WarehouseTransfer[]
+  inventoryMovements            InventoryMovement[]
+  collectionAssignments         CollectionAssignment[] @relation("CollectionAssignee")
+  collectionAssignmentsCreated  CollectionAssignment[] @relation("CollectionAssignedBy")
+  administrationActions         UserAdministrationLog[] @relation("UserAdministrationActor")
+  administrationEvents          UserAdministrationLog[] @relation("UserAdministrationTarget")
   saleWhatsAppLogs              SaleWhatsAppLog[]
+
+  @@index([status])
+  @@index([lockedUntil])
+  @@index([createdAt])
+}
+
+model SecurityToken {
+  id        String            @id
+  userId    Int
+  type      SecurityTokenType
+  tokenHash String            @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime          @default(now())
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([expiresAt])
+  @@map("security_tokens")
+}
+
+model AuthSession {
+  id               String             @id
+  userId           Int
+  refreshTokenHash String             @unique
+  ipAddress        String?
+  userAgent        String?
+  deviceName       String?
+  lastActivityAt   DateTime           @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokeReason     String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  auditLogs        SecurityAuditLog[]
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+model TwoFactorMethod {
+  id              String    @id
+  userId          Int       @unique
+  encryptedSecret String
+  isEnabled       Boolean   @default(false)
+  confirmedAt     DateTime?
+  lastUsedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("two_factor_methods")
+}
+
+model TwoFactorRecoveryCode {
+  id        String    @id
+  userId    Int
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@map("two_factor_recovery_codes")
+}
+
+model LoginAttempt {
+  id            String   @id
+  userId        Int?
+  email         String
+  successful    Boolean
+  failureReason String?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email, createdAt])
+  @@index([userId, createdAt])
+  @@index([ipAddress, createdAt])
+  @@map("login_attempts")
+}
+
+model SecurityAuditLog {
+  id           String              @id
+  actorUserId  Int?
+  targetUserId Int?
+  sessionId    String?
+  action       SecurityAuditAction
+  success      Boolean             @default(true)
+  details      Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime            @default(now())
+  actorUser    User?               @relation("SecurityAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  targetUser   User?               @relation("SecurityAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  session      AuthSession?        @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("security_audit_logs")
 }
 
 model UserAdministrationLog {
@@ -77,20 +245,19 @@ model Location {
 }
 
 model Client {
-  id             String     @id @default(cuid())
-  fullName       String
-  alias          String?
-  type           ClientType @default(NORMAL)
-  locationId     String
-  location       Location   @relation(fields: [locationId], references: [id])
-  phone          String?
+  id              String     @id @default(cuid())
+  fullName        String
+  alias           String?
+  type            ClientType @default(NORMAL)
+  locationId      String
+  location        Location   @relation(fields: [locationId], references: [id])
+  phone           String?
   whatsappConsent Boolean    @default(false)
-  additionalInfo String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-
-  sales    Sale[]
-  payments Payment[]
+  additionalInfo  String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  sales           Sale[]
+  payments        Payment[]
 
   @@map("clients")
 }
@@ -140,62 +307,55 @@ model SubCategory {
 }
 
 model Product {
-  id            String       @id @default(cuid())
-  name          String
-  description   String?
-  providerId    String
-  provider      Provider     @relation(fields: [providerId], references: [id])
-  categoryId    String
-  category      Category     @relation(fields: [categoryId], references: [id])
-  subCategoryId String?
-  subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id])
-  weight        String?
-
+  id                   String       @id @default(cuid())
+  name                 String
+  description          String?
+  providerId           String
+  provider             Provider     @relation(fields: [providerId], references: [id])
+  categoryId           String
+  category             Category     @relation(fields: [categoryId], references: [id])
+  subCategoryId        String?
+  subCategory          SubCategory? @relation(fields: [subCategoryId], references: [id])
+  weight               String?
   purchasePrice        Float
   priceNormal          Float
   priceCamino          Float
   priceEspecial        Float
   priceMayorista       Float?
   minQuantityWholesale Int?
-
-  markupNormal    Float @default(10)
-  markupCamino    Float @default(10)
-  markupEspecial  Float @default(10)
-  markupMayorista Float @default(10)
-
-  stock           Float   @default(0)
-  reservedStock   Float   @default(0)
-  minStock        Float   @default(0)
-  unit            String  @default("UNIDAD")
-  reserveQuantity Float   @default(0)
-  additionalInfo  String?
-  imageUrl        String?
-
-  purchaseDetails    PurchaseDetail[]
-  saleDetails        SaleDetail[]
-  saleReturnDetails  SaleReturnDetail[]
-  warehouseStocks    WarehouseStock[]
-  transferDetails    WarehouseTransferDetail[]
-  inventoryMovements InventoryMovement[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  markupNormal         Float        @default(10)
+  markupCamino         Float        @default(10)
+  markupEspecial       Float        @default(10)
+  markupMayorista      Float        @default(10)
+  stock                Float        @default(0)
+  reservedStock        Float        @default(0)
+  minStock             Float        @default(0)
+  unit                 String       @default("UNIDAD")
+  reserveQuantity      Float        @default(0)
+  additionalInfo       String?
+  imageUrl             String?
+  purchaseDetails      PurchaseDetail[]
+  saleDetails          SaleDetail[]
+  saleReturnDetails    SaleReturnDetail[]
+  warehouseStocks      WarehouseStock[]
+  transferDetails      WarehouseTransferDetail[]
+  inventoryMovements   InventoryMovement[]
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 }
 
 model Purchase {
-  id           String         @id @default(cuid())
-  userId       Int
-  user         User           @relation(fields: [userId], references: [id])
-  date         DateTime       @default(now())
-  status       PurchaseStatus @default(PENDING)
-  total        Float          @default(0)
-  observations String?
-  pdfUrl       String?
-
+  id             String         @id @default(cuid())
+  userId         Int
+  user           User           @relation(fields: [userId], references: [id])
+  date           DateTime       @default(now())
+  status         PurchaseStatus @default(PENDING)
+  total          Float          @default(0)
+  observations   String?
+  pdfUrl         String?
   providerGroups PurchaseProvider[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@map("purchases")
 }
@@ -210,11 +370,9 @@ model PurchaseProvider {
   total       Float                  @default(0)
   receivedAt  DateTime?
   cancelledAt DateTime?
-
-  details PurchaseDetail[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  details     PurchaseDetail[]
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
 
   @@unique([purchaseId, providerId])
   @@index([purchaseId])
@@ -223,31 +381,25 @@ model PurchaseProvider {
 }
 
 model PurchaseDetail {
-  id                 String           @id @default(cuid())
-  purchaseProviderId String
-  purchaseProvider   PurchaseProvider @relation(fields: [purchaseProviderId], references: [id], onDelete: Cascade)
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
-
-  quantity  Float
-  unitPrice Float
-  subtotal  Float
-
-  pricingConfigured    Boolean @default(false)
-  priceNormal          Float?
-  priceCamino          Float?
-  priceEspecial        Float?
-  priceMayorista       Float?
-  minQuantityWholesale Int?
-
+  id                     String                    @id @default(cuid())
+  purchaseProviderId     String
+  purchaseProvider       PurchaseProvider          @relation(fields: [purchaseProviderId], references: [id], onDelete: Cascade)
+  productId              String
+  product                Product                   @relation(fields: [productId], references: [id])
+  categoryId             String
+  category               Category                  @relation(fields: [categoryId], references: [id])
+  quantity               Float
+  unitPrice              Float
+  subtotal               Float
+  pricingConfigured      Boolean                   @default(false)
+  priceNormal            Float?
+  priceCamino            Float?
+  priceEspecial          Float?
+  priceMayorista         Float?
+  minQuantityWholesale   Int?
   warehouseDistributions PurchaseDetailWarehouse[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
 
   @@index([purchaseProviderId])
   @@index([productId])
@@ -268,40 +420,32 @@ enum PurchaseProviderStatus {
 }
 
 model Sale {
-  id         String @id @default(cuid())
-  saleNumber String @unique
-
-  clientId String
-  client   Client @relation(fields: [clientId], references: [id])
-
-  userId Int
-  user   User @relation(fields: [userId], references: [id])
-
-  date          DateTime      @default(now())
-  status        SaleStatus    @default(PENDING)
-  paymentStatus PaymentStatus @default(PENDING)
-  saleType      SaleType      @default(CASH)
-
-  dueDate DateTime?
-  confirmedAt DateTime?
-  cancelledAt DateTime?
-
-  subtotal Float @default(0)
-  discount Float @default(0)
-  total    Float
-
-  observations    String?
-  pdfUrl          String?
-  cancelledPdfUrl String?
-
+  id                   String               @id @default(cuid())
+  saleNumber           String               @unique
+  clientId             String
+  client               Client               @relation(fields: [clientId], references: [id])
+  userId               Int
+  user                 User                 @relation(fields: [userId], references: [id])
+  date                 DateTime             @default(now())
+  status               SaleStatus           @default(PENDING)
+  paymentStatus        PaymentStatus        @default(PENDING)
+  saleType             SaleType             @default(CASH)
+  dueDate              DateTime?
+  confirmedAt          DateTime?
+  cancelledAt          DateTime?
+  subtotal             Float                @default(0)
+  discount             Float                @default(0)
+  total                Float
+  observations         String?
+  pdfUrl               String?
+  cancelledPdfUrl      String?
   details              SaleDetail[]
   payments             Payment[]
   returns              SaleReturn[]
   collectionAssignment CollectionAssignment?
-  whatsappLogs        SaleWhatsAppLog[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  whatsappLogs         SaleWhatsAppLog[]
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
 
   @@index([date])
   @@index([confirmedAt])
@@ -338,24 +482,18 @@ model SaleWhatsAppLog {
 }
 
 model SaleDetail {
-  id String @id @default(cuid())
-
-  saleId String
-  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  quantity  Int
-  unitPrice Float
-  subtotal  Float
-
-  returnedQuantity Int @default(0)
-
-  returnDetails SaleReturnDetail[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String             @id @default(cuid())
+  saleId           String
+  sale             Sale               @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product            @relation(fields: [productId], references: [id])
+  quantity         Int
+  unitPrice        Float
+  subtotal         Float
+  returnedQuantity Int                @default(0)
+  returnDetails    SaleReturnDetail[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   @@index([saleId])
   @@index([productId])
@@ -363,19 +501,15 @@ model SaleDetail {
 }
 
 model SaleReturn {
-  id String @id @default(cuid())
-
-  saleId String
-  sale   Sale   @relation(fields: [saleId], references: [id])
-
-  userId Int
-  user   User @relation(fields: [userId], references: [id])
-
+  id           String             @id @default(cuid())
+  saleId       String
+  sale         Sale               @relation(fields: [saleId], references: [id])
+  userId       Int
+  user         User               @relation(fields: [userId], references: [id])
   amount       Float
   observations String?
-  createdAt    DateTime @default(now())
-
-  details SaleReturnDetail[]
+  createdAt    DateTime           @default(now())
+  details      SaleReturnDetail[]
 
   @@index([saleId])
   @@index([userId])
@@ -383,20 +517,16 @@ model SaleReturn {
 }
 
 model SaleReturnDetail {
-  id String @id @default(cuid())
-
+  id           String       @id @default(cuid())
   saleReturnId String
-  saleReturn   SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
-
+  saleReturn   SaleReturn   @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
   saleDetailId String
-  saleDetail   SaleDetail @relation(fields: [saleDetailId], references: [id])
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  quantity  Int
-  unitPrice Float
-  subtotal  Float
+  saleDetail   SaleDetail   @relation(fields: [saleDetailId], references: [id])
+  productId    String
+  product      Product      @relation(fields: [productId], references: [id])
+  quantity     Int
+  unitPrice    Float
+  subtotal     Float
 
   @@index([saleReturnId])
   @@index([saleDetailId])
@@ -453,10 +583,9 @@ model CollectionAssignment {
   assignedById Int
   assignedAt   DateTime @default(now())
   updatedAt    DateTime @updatedAt
-
-  sale       Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  assignedTo User @relation("CollectionAssignee", fields: [assignedToId], references: [id], onDelete: Restrict)
-  assignedBy User @relation("CollectionAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+  sale         Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  assignedTo   User     @relation("CollectionAssignee", fields: [assignedToId], references: [id], onDelete: Restrict)
+  assignedBy   User     @relation("CollectionAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
 
   @@index([assignedToId])
   @@index([assignedById])
@@ -485,40 +614,35 @@ enum ReportType {
 }
 
 model Warehouse {
-  id          String  @id @default(cuid())
-  name        String  @unique
-  code        String  @unique
-  description String?
-  isActive    Boolean @default(true)
-  isDefault   Boolean @default(false)
-
+  id                    String                    @id @default(cuid())
+  name                  String                    @unique
+  code                  String                    @unique
+  description           String?
+  isActive              Boolean                   @default(true)
+  isDefault             Boolean                   @default(false)
   stocks                WarehouseStock[]
   purchaseDistributions PurchaseDetailWarehouse[]
   outgoingTransfers     WarehouseTransfer[]       @relation("TransferOrigin")
   incomingTransfers     WarehouseTransfer[]       @relation("TransferDestination")
   movements             InventoryMovement[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
 
   @@map("warehouses")
 }
 
 model WarehouseStock {
-  id          String @id @default(cuid())
-  warehouseId String
-  productId   String
-
-  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  product   Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
-
-  stock           Float @default(0)
-  reservedStock   Float @default(0)
-  minStock        Float @default(0)
-  reserveQuantity Float @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String    @id @default(cuid())
+  warehouseId     String
+  productId       String
+  warehouse       Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  stock           Float     @default(0)
+  reservedStock   Float     @default(0)
+  minStock        Float     @default(0)
+  reserveQuantity Float     @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@unique([warehouseId, productId])
   @@index([warehouseId])
@@ -527,16 +651,14 @@ model WarehouseStock {
 }
 
 model PurchaseDetailWarehouse {
-  id               String @id @default(cuid())
+  id               String         @id @default(cuid())
   purchaseDetailId String
   warehouseId      String
   quantity         Float
-
-  purchaseDetail PurchaseDetail @relation(fields: [purchaseDetailId], references: [id], onDelete: Cascade)
-  warehouse      Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  purchaseDetail   PurchaseDetail @relation(fields: [purchaseDetailId], references: [id], onDelete: Cascade)
+  warehouse        Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   @@unique([purchaseDetailId, warehouseId])
   @@index([purchaseDetailId])
@@ -545,25 +667,21 @@ model PurchaseDetailWarehouse {
 }
 
 model WarehouseTransfer {
-  id                     String @id @default(cuid())
-  transferNumber         String @unique
+  id                     String                  @id @default(cuid())
+  transferNumber         String                  @unique
   originWarehouseId      String
   destinationWarehouseId String
   userId                 Int
-
-  originWarehouse      Warehouse @relation("TransferOrigin", fields: [originWarehouseId], references: [id], onDelete: Restrict)
-  destinationWarehouse Warehouse @relation("TransferDestination", fields: [destinationWarehouseId], references: [id], onDelete: Restrict)
-  user                 User      @relation(fields: [userId], references: [id], onDelete: Restrict)
-
-  status        WarehouseTransferStatus @default(COMPLETED)
-  observations  String?
-  transferredAt DateTime                @default(now())
-  cancelledAt   DateTime?
-
-  details WarehouseTransferDetail[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  originWarehouse        Warehouse               @relation("TransferOrigin", fields: [originWarehouseId], references: [id], onDelete: Restrict)
+  destinationWarehouse   Warehouse               @relation("TransferDestination", fields: [destinationWarehouseId], references: [id], onDelete: Restrict)
+  user                    User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status                  WarehouseTransferStatus @default(COMPLETED)
+  observations            String?
+  transferredAt           DateTime                @default(now())
+  cancelledAt             DateTime?
+  details                 WarehouseTransferDetail[]
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
 
   @@index([originWarehouseId])
   @@index([destinationWarehouseId])
@@ -573,16 +691,14 @@ model WarehouseTransfer {
 }
 
 model WarehouseTransferDetail {
-  id         String @id @default(cuid())
+  id         String            @id @default(cuid())
   transferId String
   productId  String
   quantity   Float
-
-  transfer WarehouseTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  product  Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  transfer   WarehouseTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product    Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
 
   @@unique([transferId, productId])
   @@index([transferId])
@@ -591,15 +707,13 @@ model WarehouseTransferDetail {
 }
 
 model InventoryMovement {
-  id          String @id @default(cuid())
-  warehouseId String
-  productId   String
-  userId      Int?
-
-  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  product   Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
-  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-
+  id            String                @id @default(cuid())
+  warehouseId   String
+  productId     String
+  userId        Int?
+  warehouse     Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  product       Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  user          User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
   type          InventoryMovementType
   quantity      Float
   previousStock Float
