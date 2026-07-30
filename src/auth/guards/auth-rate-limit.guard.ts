@@ -1,8 +1,9 @@
 import {
   CanActivate,
   ExecutionContext,
+  HttpException,
+  HttpStatus,
   Injectable,
-  TooManyRequestsException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
@@ -38,9 +39,7 @@ export class AuthRateLimitGuard implements CanActivate {
     const current = this.entries.get(key);
 
     if (current?.blockedUntil && current.blockedUntil > now) {
-      throw new TooManyRequestsException(
-        'Demasiados intentos. Espera unos minutos antes de volver a intentar.',
-      );
+      this.throwRateLimit();
     }
 
     const entry =
@@ -57,14 +56,19 @@ export class AuthRateLimitGuard implements CanActivate {
     if (entry.count > options.limit) {
       entry.blockedUntil = now + (options.blockMs ?? options.windowMs);
       this.entries.set(key, entry);
-      throw new TooManyRequestsException(
-        'Demasiados intentos. Espera unos minutos antes de volver a intentar.',
-      );
+      this.throwRateLimit();
     }
 
     this.entries.set(key, entry);
     this.cleanup(now);
     return true;
+  }
+
+  private throwRateLimit(): never {
+    throw new HttpException(
+      'Demasiados intentos. Espera unos minutos antes de volver a intentar.',
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   private keyFor(request: Request, options: AuthRateLimitOptions) {
