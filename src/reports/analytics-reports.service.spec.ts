@@ -133,4 +133,50 @@ describe('AnalyticsReportsService', () => {
     expect(where.receivedAt.gte.toISOString()).toBe('2026-07-01T04:00:00.000Z');
     expect(where.receivedAt.lte.toISOString()).toBe('2026-08-01T03:59:59.999Z');
   });
+
+  it('resume por producto los clientes y la cantidad total de la matriz', () => {
+    const service = new AnalyticsReportsService({} as unknown as PrismaService);
+    const product = {
+      id: 'product_a_12345678',
+      name: 'Fideo @',
+      provider: { companyName: 'Molino Andino' },
+      category: { name: 'Fideo' },
+    };
+    const matrix = {
+      products: [product],
+      clients: [
+        {
+          name: 'Ana',
+          quantities: new Map([[product.id, 2]]),
+          total: 20,
+        },
+        {
+          name: 'Mario',
+          quantities: new Map<string, number>(),
+          total: 10,
+        },
+        {
+          name: 'Rosa',
+          quantities: new Map([[product.id, 56]]),
+          total: 560,
+        },
+      ],
+      periodLabel: '2026-07-01 al 2026-07-29',
+      generatedAt: new Date(),
+    };
+
+    const html = (
+      service as unknown as {
+        buildSalesMatrixHtml: (value: typeof matrix) => string;
+      }
+    ).buildSalesMatrixHtml(matrix);
+
+    expect(html).toContain('RESUMEN TOTAL DE PRODUCTOS VENDIDOS');
+    expect(html).toContain('<th class="product"><span>Fideo @</span></th>');
+    expect(html).toContain('writing-mode: vertical-rl');
+    expect(html).toContain('transform: rotate(180deg)');
+    expect(html).toMatch(
+      /Fideo @[\s\S]*?<td class="quantity">2<\/td>[\s\S]*?<td class="quantity">58<\/td>/,
+    );
+  });
 });
