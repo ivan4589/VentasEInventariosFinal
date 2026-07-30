@@ -13,6 +13,8 @@ import { AuthService } from './auth.service';
 import {
   ApproveRegistrationDto,
   PublicRegisterDto,
+  RejectRegistrationDto,
+  ResetPasswordDto,
 } from './dto/security-auth.dto';
 import { createOpaqueToken, hashToken } from './security-crypto';
 import { SecurityEmailService } from './security-email.service';
@@ -25,6 +27,10 @@ type UserStatus =
   | 'REJECTED'
   | 'TEMPORARILY_LOCKED'
   | 'DISABLED';
+type SecurityTokenType =
+  | 'EMAIL_VERIFICATION'
+  | 'PASSWORD_RESET'
+  | 'TWO_FACTOR_CHALLENGE';
 
 type UserRow = {
   id: number;
@@ -47,7 +53,7 @@ type RequestContext = {
 };
 
 const GENERIC_RECOVERY_MESSAGE =
-  'Si existe una cuenta pendiente, recibirás instrucciones en tu correo.';
+  'Si existe una cuenta asociada, recibirás instrucciones en tu correo.';
 
 @Injectable()
 export class EmailAuthService extends AuthService {
@@ -87,8 +93,9 @@ export class EmailAuthService extends AuthService {
     `;
     const user = rows[0];
     const expiresInMinutes = this.verificationTtlMinutes();
-    const token = await this.issueEmailVerificationToken(
+    const token = await this.issueEmailToken(
       user.id,
+      'EMAIL_VERIFICATION',
       expiresInMinutes,
     );
     const verificationUrl = `${this.emailFrontendUrl()}/verificar-correo?token=${encodeURIComponent(token)}`;
@@ -140,10 +147,20 @@ export class EmailAuthService extends AuthService {
       return { message: GENERIC_RECOVERY_MESSAGE };
     }
 
-    await this.revokeEmailVerificationTokens(user.id);
+    if (
+      await this.tokenCreatedRecently(user.id, 'EMAIL_VERIFICATION', 60)
+    ) {
+      return {
+        message:
+          'Ya se envió un correo recientemente. Espera un minuto antes de solicitar otro.',
+      };
+    }
+
+    await this.revokeSecurityTokens(user.id, 'EMAIL_VERIFICATION');
     const expiresInMinutes = this.verificationTtlMinutes();
-    const token = await this.issueEmailVerificationToken(
+    const token = await this.issueEmailToken(
       user.id,
+      'EMAIL_VERIFICATION',
       expiresInMinutes,
     );
     const verificationUrl = `${this.emailFrontendUrl()}/verificar-correo?token=${encodeURIComponent(token)}`;
@@ -179,6 +196,73 @@ export class EmailAuthService extends AuthService {
     };
   }
 
+  override async forgotPassword(emailValue: string) {
+    const email = emailValue.trim().toLowerCase();
+    const user = await this.findSecurityUserByEmail(email);
+
+    if (!user || user.status !== 'ACTIVE' || !user.isActive) {
+      return { message: GENERIC_RECOVERY_MESSAGE };
+    }
+
+    if (await this.tokenCreatedRecently(user.id, 'PASSWORD_RESET', 60)) {
+      return { message: GENERIC_RECOVERY_MESSAGE };
+    }
+
+    await this.revokeSecurityTokens(user.id, 'PASSWORD_RESET');
+    const expiresInMinutes = this.passwordResetTtlMinutes();
+    const token = await this.issueEmailToken(
+      user.id,
+      'PASSWORD_RESET',
+      expiresInMinutes,
+    );
+    const resetUrl = `${this.emailFrontendUrl()}/restablecer-contrasena?token=${encodeURIComponent(token)}`;
+    const delivery = await this.securityEmail.sendPasswordResetEmail({
+      to: user.email,
+      name: user.name,
+      resetUrl,
+      expiresInMinutes,
+    });
+
+    await this.auditSecurityEvent(
+      'PASSWORD_RESET_REQUESTED',
+      user.id,
+      user.id,
+      {},
+      delivery.sent,
+      delivery.error ? { error: delivery.error } : null,
+    );
+
+    return {
+      message: GENERIC_RECOVERY_MESSAGE,
+      ...(this.exposeDevelopmentData() && !delivery.sent
+        ? { resetToken: token, resetUrl, emailError: delivery.error }
+        : {}),
+    };
+  }
+
+  override async resetPassword(dto: ResetPasswordDto) {
+    const tokenUsers = await this.database.$queryRaw<
+      Array<{ name: string; email: string }>
+    >`
+      SELECT u."name", u."email"
+      FROM "security_tokens" t
+      INNER JOIN "User" u ON u."id" = t."userId"
+      WHERE t."tokenHash" = ${hashToken(dto.token)}
+        AND t."type" = 'PASSWORD_RESET'::"SecurityTokenType"
+      LIMIT 1
+    `;
+
+    const result = await super.resetPassword(dto);
+    const user = tokenUsers[0];
+    if (user) {
+      await this.securityEmail.sendPasswordChangedEmail({
+        to: user.email,
+        name: user.name,
+      });
+    }
+    return result;
+  }
+
   override async approveRegistration(
     userId: number,
     dto: ApproveRegistrationDto,
@@ -186,16 +270,12 @@ export class EmailAuthService extends AuthService {
   ) {
     const user = await this.findSecurityUserById(userId);
 
-    if (!user) {
-      throw new NotFoundException('Solicitud no encontrada');
-    }
-
+    if (!user) throw new NotFoundException('Solicitud no encontrada');
     if (user.status === 'PENDING_EMAIL_VERIFICATION') {
       throw new BadRequestException(
         'El solicitante debe verificar su correo antes de ser aprobado',
       );
     }
-
     if (user.status !== 'PENDING_ADMIN_APPROVAL') {
       throw new BadRequestException('La solicitud no está lista para aprobación');
     }
@@ -235,6 +315,49 @@ export class EmailAuthService extends AuthService {
     };
   }
 
+  override async rejectRegistration(
+    userId: number,
+    dto: RejectRegistrationDto,
+    administratorId: number,
+  ) {
+    const user = await this.findSecurityUserById(userId);
+    if (!user) throw new NotFoundException('Solicitud no encontrada');
+
+    const result = await super.rejectRegistration(
+      userId,
+      dto,
+      administratorId,
+    );
+    const delivery = await this.securityEmail.sendRejectionEmail({
+      to: user.email,
+      name: user.name,
+      reason: dto.reason,
+    });
+
+    return {
+      ...result,
+      message: delivery.sent
+        ? 'Solicitud rechazada y correo enviado.'
+        : 'Solicitud rechazada, pero no se pudo enviar el correo.',
+      emailSent: delivery.sent,
+    };
+  }
+
+  override async resetTwoFactorByAdmin(
+    userId: number,
+    administratorId: number,
+  ) {
+    const user = await this.findSecurityUserById(userId);
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    const result = await super.resetTwoFactorByAdmin(userId, administratorId);
+    const delivery = await this.securityEmail.sendTwoFactorResetEmail({
+      to: user.email,
+      name: user.name,
+    });
+    return { ...result, emailSent: delivery.sent };
+  }
+
   private async findSecurityUserByEmail(email: string) {
     const rows = await this.database.$queryRaw<UserRow[]>`
       SELECT * FROM "User" WHERE "email" = ${email} LIMIT 1
@@ -249,8 +372,9 @@ export class EmailAuthService extends AuthService {
     return rows[0] ?? null;
   }
 
-  private async issueEmailVerificationToken(
+  private async issueEmailToken(
     userId: number,
+    type: SecurityTokenType,
     expiresInMinutes: number,
   ) {
     const token = createOpaqueToken();
@@ -262,23 +386,42 @@ export class EmailAuthService extends AuthService {
       INSERT INTO "security_tokens" (
         "id", "userId", "type", "tokenHash", "expiresAt", "createdAt"
       ) VALUES (
-        ${randomUUID()}, ${userId}, 'EMAIL_VERIFICATION'::"SecurityTokenType",
+        ${randomUUID()}, ${userId}, ${type}::"SecurityTokenType",
         ${hashToken(token)}, ${expiresAt}, NOW()
       )
     `;
-
     return token;
   }
 
-  private async revokeEmailVerificationTokens(userId: number) {
+  private async revokeSecurityTokens(
+    userId: number,
+    type: SecurityTokenType,
+  ) {
     await this.database.$executeRaw`
       UPDATE "security_tokens"
       SET "revokedAt" = NOW()
       WHERE "userId" = ${userId}
-        AND "type" = 'EMAIL_VERIFICATION'::"SecurityTokenType"
+        AND "type" = ${type}::"SecurityTokenType"
         AND "usedAt" IS NULL
         AND "revokedAt" IS NULL
     `;
+  }
+
+  private async tokenCreatedRecently(
+    userId: number,
+    type: SecurityTokenType,
+    seconds: number,
+  ) {
+    const rows = await this.database.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS(
+        SELECT 1
+        FROM "security_tokens"
+        WHERE "userId" = ${userId}
+          AND "type" = ${type}::"SecurityTokenType"
+          AND "createdAt" > NOW() - (${seconds} * INTERVAL '1 second')
+      ) AS "exists"
+    `;
+    return rows[0]?.exists ?? false;
   }
 
   private async auditSecurityEvent(
@@ -303,14 +446,18 @@ export class EmailAuthService extends AuthService {
   }
 
   private verificationTtlMinutes() {
+    return this.readTtl('EMAIL_VERIFICATION_TTL_MINUTES', 30);
+  }
+
+  private passwordResetTtlMinutes() {
+    return this.readTtl('PASSWORD_RESET_TTL_MINUTES', 30);
+  }
+
+  private readTtl(key: string, fallback: number) {
     const configured = Number(
-      this.configuration.get<string>('EMAIL_VERIFICATION_TTL_MINUTES') || 30,
+      this.configuration.get<string>(key) || fallback,
     );
-
-    if (!Number.isFinite(configured)) {
-      return 30;
-    }
-
+    if (!Number.isFinite(configured)) return fallback;
     return Math.min(Math.max(Math.trunc(configured), 5), 1440);
   }
 
