@@ -41,6 +41,10 @@ describe('Matriz fija de roles y permisos', () => {
     ).toBe(true);
 
     const permissions = permissionsForRole($Enums.Role.COBRADOR);
+    expect(permissions).not.toContain(PERMISSIONS.DASHBOARD_VIEW);
+    expect(permissions).not.toContain(PERMISSIONS.CLIENTS_VIEW);
+    expect(permissions).not.toContain(PERMISSIONS.PRODUCTS_VIEW);
+    expect(permissions).not.toContain(PERMISSIONS.INVENTORY_VIEW);
     expect(permissions).not.toContain(PERMISSIONS.SALES_VIEW_ALL);
     expect(permissions).not.toContain(PERMISSIONS.SALES_DOWNLOAD_ALL);
     expect(permissions).not.toContain(PERMISSIONS.PAYMENTS_UPDATE);
