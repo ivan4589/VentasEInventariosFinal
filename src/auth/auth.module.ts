@@ -4,8 +4,10 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthController } from './auth.controller';
+import { AuthSecurityCompletionService } from './auth-security-completion.service';
 import { AuthService } from './auth.service';
 import { EmailAuthService } from './email-auth.service';
+import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
 import { SecurityEmailService } from './security-email.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
@@ -32,12 +34,14 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   controllers: [AuthController],
   providers: [
     SecurityEmailService,
+    AuthSecurityCompletionService,
+    AuthRateLimitGuard,
     {
       provide: AuthService,
       useClass: EmailAuthService,
     },
     JwtStrategy,
   ],
-  exports: [AuthService],
+  exports: [AuthService, AuthSecurityCompletionService],
 })
 export class AuthModule {}

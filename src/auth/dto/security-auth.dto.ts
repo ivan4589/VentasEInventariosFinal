@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEmail,
   IsIn,
   IsOptional,
@@ -8,7 +9,8 @@ import {
   MinLength,
 } from 'class-validator';
 
-const strongPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,128}$/;
+const strongPassword =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,128}$/;
 
 export class PublicRegisterDto {
   @IsString()
@@ -65,6 +67,19 @@ export class ResetPasswordDto extends TokenDto {
   newPassword: string;
 }
 
+export class ChangePasswordDto {
+  @IsString()
+  @MinLength(1)
+  currentPassword: string;
+
+  @IsString()
+  @Matches(strongPassword, {
+    message:
+      'La contraseña debe tener entre 12 y 128 caracteres e incluir mayúscula, minúscula, número y símbolo',
+  })
+  newPassword: string;
+}
+
 export class TwoFactorCodeDto {
   @IsString()
   @MinLength(20)
@@ -73,6 +88,10 @@ export class TwoFactorCodeDto {
   @IsString()
   @Matches(/^\d{6}$/, { message: 'El código debe contener 6 dígitos' })
   code: string;
+
+  @IsOptional()
+  @IsBoolean()
+  remember?: boolean;
 }
 
 export class TwoFactorRecoveryDto {
@@ -83,6 +102,20 @@ export class TwoFactorRecoveryDto {
   @IsString()
   @MinLength(8)
   recoveryCode: string;
+
+  @IsOptional()
+  @IsBoolean()
+  remember?: boolean;
+}
+
+export class RecoveryCodesRegenerateDto {
+  @IsString()
+  @MinLength(1)
+  password: string;
+
+  @IsString()
+  @Matches(/^\d{6}$/, { message: 'El código debe contener 6 dígitos' })
+  code: string;
 }
 
 export class RefreshTokenDto {
