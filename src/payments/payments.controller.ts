@@ -68,7 +68,7 @@ export class PaymentsController {
     @Param('saleId') saleId: string,
     @Request() req: any,
   ) {
-    await this.dataScope.assertCanViewSale(saleId, req.user);
+    await this.dataScope.assertCanViewSaleFinancials(saleId, req.user);
     return this.paymentsService.getSalePaymentStatus(saleId);
   }
 
@@ -103,7 +103,7 @@ export class PaymentsController {
   )
   async findOne(@Param('id') id: string, @Request() req: any) {
     const payment = await this.paymentsService.findOne(id);
-    await this.dataScope.assertCanViewSale(payment.saleId, req.user);
+    await this.dataScope.assertCanViewSaleFinancials(payment.saleId, req.user);
     return payment;
   }
 
