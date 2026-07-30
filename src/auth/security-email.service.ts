@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-type EmailDeliveryResult = {
+export type EmailDeliveryResult = {
   sent: boolean;
   error?: string;
 };
@@ -18,6 +18,24 @@ type ApprovalEmailInput = {
   name: string;
   role: 'ADMIN' | 'VENDEDOR' | 'COBRADOR';
   loginUrl: string;
+};
+
+type RejectionEmailInput = {
+  to: string;
+  name: string;
+  reason: string;
+};
+
+type PasswordResetEmailInput = {
+  to: string;
+  name: string;
+  resetUrl: string;
+  expiresInMinutes: number;
+};
+
+type SimpleSecurityEmailInput = {
+  to: string;
+  name: string;
 };
 
 @Injectable()
@@ -119,6 +137,129 @@ export class SecurityEmailService {
     });
   }
 
+  async sendRejectionEmail(
+    input: RejectionEmailInput,
+  ): Promise<EmailDeliveryResult> {
+    const safeName = this.escapeHtml(input.name);
+    const safeReason = this.escapeHtml(input.reason);
+
+    return this.send({
+      to: input.to,
+      subject: 'Resultado de tu solicitud — Yungas Distribuidora',
+      text: [
+        `Hola ${input.name},`,
+        '',
+        'Tu solicitud de acceso no fue aprobada.',
+        `Motivo: ${input.reason}`,
+        '',
+        'Comunícate con el administrador si necesitas una revisión.',
+      ].join('\n'),
+      html: this.layout(`
+        <h1 style="margin:0 0 12px;font-size:24px;color:#0b1f33;">Solicitud no aprobada</h1>
+        <p style="margin:0 0 16px;color:#344054;line-height:1.6;">Hola <strong>${safeName}</strong>,</p>
+        <p style="margin:0 0 16px;color:#344054;line-height:1.6;">
+          El administrador revisó tu solicitud de acceso y no fue aprobada.
+        </p>
+        <div style="margin:0 0 18px;padding:14px 16px;background:#fef3f2;border:1px solid #fecdca;border-radius:8px;color:#b42318;">
+          Motivo: <strong>${safeReason}</strong>
+        </div>
+        <p style="margin:0;color:#667085;font-size:13px;line-height:1.5;">
+          Comunícate con el administrador si consideras que la solicitud debe revisarse nuevamente.
+        </p>
+      `),
+    });
+  }
+
+  async sendPasswordResetEmail(
+    input: PasswordResetEmailInput,
+  ): Promise<EmailDeliveryResult> {
+    const safeName = this.escapeHtml(input.name);
+    const safeUrl = this.escapeHtml(input.resetUrl);
+
+    return this.send({
+      to: input.to,
+      subject: 'Recupera tu contraseña — Yungas Distribuidora',
+      text: [
+        `Hola ${input.name},`,
+        '',
+        `Crea una nueva contraseña desde: ${input.resetUrl}`,
+        `El enlace caduca en ${input.expiresInMinutes} minutos.`,
+        '',
+        'Si no solicitaste el cambio, ignora este mensaje.',
+      ].join('\n'),
+      html: this.layout(`
+        <h1 style="margin:0 0 12px;font-size:24px;color:#0b1f33;">Recupera tu contraseña</h1>
+        <p style="margin:0 0 16px;color:#344054;line-height:1.6;">Hola <strong>${safeName}</strong>,</p>
+        <p style="margin:0 0 22px;color:#344054;line-height:1.6;">
+          Recibimos una solicitud para cambiar la contraseña de tu cuenta.
+        </p>
+        <p style="margin:0 0 24px;text-align:center;">
+          <a href="${safeUrl}" style="display:inline-block;background:#175cd3;color:#ffffff;text-decoration:none;padding:13px 24px;border-radius:8px;font-weight:700;">
+            Crear nueva contraseña
+          </a>
+        </p>
+        <p style="margin:0 0 12px;color:#475467;line-height:1.6;">
+          Este enlace caduca en <strong>${input.expiresInMinutes} minutos</strong> y solo puede utilizarse una vez.
+        </p>
+        <p style="margin:0;color:#667085;font-size:13px;line-height:1.5;">
+          Si no solicitaste el cambio, ignora este mensaje y conserva tu contraseña actual.
+        </p>
+      `),
+    });
+  }
+
+  async sendPasswordChangedEmail(
+    input: SimpleSecurityEmailInput,
+  ): Promise<EmailDeliveryResult> {
+    const safeName = this.escapeHtml(input.name);
+    return this.send({
+      to: input.to,
+      subject: 'Tu contraseña fue modificada — Yungas Distribuidora',
+      text: [
+        `Hola ${input.name},`,
+        '',
+        'La contraseña de tu cuenta fue modificada y todas las sesiones fueron cerradas.',
+        'Si no realizaste este cambio, comunícate inmediatamente con el administrador.',
+      ].join('\n'),
+      html: this.layout(`
+        <h1 style="margin:0 0 12px;font-size:24px;color:#0b1f33;">Contraseña modificada</h1>
+        <p style="margin:0 0 16px;color:#344054;line-height:1.6;">Hola <strong>${safeName}</strong>,</p>
+        <p style="margin:0 0 16px;color:#344054;line-height:1.6;">
+          La contraseña de tu cuenta fue modificada y todas las sesiones abiertas fueron cerradas.
+        </p>
+        <div style="padding:14px 16px;background:#fffaeb;border:1px solid #fedf89;border-radius:8px;color:#b54708;">
+          Si no realizaste este cambio, comunícate inmediatamente con el administrador.
+        </div>
+      `),
+    });
+  }
+
+  async sendTwoFactorResetEmail(
+    input: SimpleSecurityEmailInput,
+  ): Promise<EmailDeliveryResult> {
+    const safeName = this.escapeHtml(input.name);
+    return this.send({
+      to: input.to,
+      subject: 'Tu segundo factor fue restablecido — Yungas Distribuidora',
+      text: [
+        `Hola ${input.name},`,
+        '',
+        'El administrador restableció tu verificación en dos pasos.',
+        'En tu siguiente inicio de sesión deberás configurarla nuevamente.',
+      ].join('\n'),
+      html: this.layout(`
+        <h1 style="margin:0 0 12px;font-size:24px;color:#0b1f33;">Segundo factor restablecido</h1>
+        <p style="margin:0 0 16px;color:#344054;line-height:1.6;">Hola <strong>${safeName}</strong>,</p>
+        <p style="margin:0 0 12px;color:#344054;line-height:1.6;">
+          El administrador restableció tu verificación en dos pasos y cerró tus sesiones activas.
+        </p>
+        <p style="margin:0;color:#667085;font-size:13px;line-height:1.5;">
+          En tu siguiente inicio de sesión deberás configurar nuevamente tu aplicación autenticadora.
+        </p>
+      `),
+    });
+  }
+
   private async send(input: {
     to: string;
     subject: string;
@@ -151,9 +292,7 @@ export class SecurityEmailService {
         }),
       });
 
-      if (response.ok) {
-        return { sent: true };
-      }
+      if (response.ok) return { sent: true };
 
       const payload = (await response.json().catch(() => null)) as {
         message?: string;
