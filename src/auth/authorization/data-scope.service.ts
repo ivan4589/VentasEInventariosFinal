@@ -95,7 +95,7 @@ export class DataScopeService {
     return rows.filter((row) => allowed?.has(row.id));
   }
 
-  sanitizeSaleForActor<T extends Record<string, unknown>>(
+  sanitizeSaleForActor<T extends object>(
     sale: T,
     actor: AuthorizationActor,
   ): T {
@@ -103,7 +103,7 @@ export class DataScopeService {
       return sale;
     }
 
-    const sanitized = { ...sale } as Record<string, unknown>;
+    const sanitized = { ...sale } as T & Record<string, unknown>;
     delete sanitized.pdfUrl;
     delete sanitized.cancelledPdfUrl;
     delete sanitized.whatsappLastSentAt;
@@ -111,10 +111,10 @@ export class DataScopeService {
     delete sanitized.whatsappLastError;
     delete sanitized.clientWhatsAppConsent;
 
-    return sanitized as T;
+    return sanitized;
   }
 
-  sanitizeSalesForActor<T extends Record<string, unknown>>(
+  sanitizeSalesForActor<T extends object>(
     sales: T[],
     actor: AuthorizationActor,
   ): T[] {
