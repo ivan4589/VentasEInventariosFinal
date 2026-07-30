@@ -129,17 +129,25 @@ export class DataScopeService {
     sale: T,
     actor: AuthorizationActor,
   ): T {
-    if (actor.role !== $Enums.Role.COBRADOR) {
-      return sale;
+    const sanitized = { ...sale } as T & Record<string, unknown>;
+
+    if (
+      actor.role === $Enums.Role.VENDEDOR &&
+      sanitized.userId !== actor.id
+    ) {
+      delete sanitized.paidAmount;
+      delete sanitized.balance;
+      delete sanitized.paymentStatus;
     }
 
-    const sanitized = { ...sale } as T & Record<string, unknown>;
-    delete sanitized.pdfUrl;
-    delete sanitized.cancelledPdfUrl;
-    delete sanitized.whatsappLastSentAt;
-    delete sanitized.whatsappMessageId;
-    delete sanitized.whatsappLastError;
-    delete sanitized.clientWhatsAppConsent;
+    if (actor.role === $Enums.Role.COBRADOR) {
+      delete sanitized.pdfUrl;
+      delete sanitized.cancelledPdfUrl;
+      delete sanitized.whatsappLastSentAt;
+      delete sanitized.whatsappMessageId;
+      delete sanitized.whatsappLastError;
+      delete sanitized.clientWhatsAppConsent;
+    }
 
     return sanitized;
   }
