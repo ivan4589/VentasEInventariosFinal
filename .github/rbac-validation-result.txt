@@ -6,7 +6,7 @@ npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and con
 npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
-added 864 packages, and audited 865 packages in 14s
+added 864 packages, and audited 865 packages in 22s
 
 169 packages are looking for funding
   run `npm fund` for details
@@ -37,7 +37,7 @@ Prisma schema loaded from prisma/schema.prisma.
 │    npm i @prisma/client@latest                          │
 └─────────────────────────────────────────────────────────┘
 
-✔ Generated Prisma Client (7.8.0) to ./generated/prisma in 205ms
+✔ Generated Prisma Client (7.8.0) to ./generated/prisma in 334ms
 
 EXIT_CODE=0
 
@@ -46,21 +46,24 @@ EXIT_CODE=0
 > sistema-ventas-backend@0.0.1 build
 > nest build
 
-[96msrc/sales/sales.controller.ts[0m:[93m63[0m:[93m49[0m - [91merror[0m[90m TS2345: [0mArgument of type 'SaleResponseDto[]' is not assignable to parameter of type 'Record<string, unknown>[]'.
-  Type 'SaleResponseDto' is not assignable to type 'Record<string, unknown>'.
-    Index signature for type 'string' is missing in type 'SaleResponseDto'.
+EXIT_CODE=0
 
-[7m63[0m     return this.dataScope.sanitizeSalesForActor(scoped, req.user);
-[7m  [0m [91m                                                ~~~~~~[0m
-[96msrc/sales/sales.controller.ts[0m:[93m82[0m:[93m48[0m - [91merror[0m[90m TS2345: [0mArgument of type 'SaleResponseDto' is not assignable to parameter of type 'Record<string, unknown>'.
-  Index signature for type 'string' is missing in type 'SaleResponseDto'.
+===== RBAC and auth tests =====
 
-[7m82[0m     return this.dataScope.sanitizeSaleForActor(sale, req.user);
-[7m  [0m [91m                                               ~~~~[0m
+> sistema-ventas-backend@0.0.1 test
+> jest --runInBand permissions.spec.ts auth
 
-Found 2 error(s).
+PASS src/auth/auth.service.spec.ts
+PASS src/auth/authorization/permissions.spec.ts
+PASS src/auth/security-crypto.spec.ts
+PASS src/auth/auth.controller.spec.ts
 
-EXIT_CODE=1
+Test Suites: 4 passed, 4 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        2.597 s
+Ran all test suites matching permissions.spec.ts|auth.
+EXIT_CODE=0
 
-RBAC_BACKEND_FINAL_STATUS=1
-Validated at 2026-07-30T23:42:21Z
+RBAC_BACKEND_FINAL_STATUS=0
+Validated at 2026-07-30T23:44:42Z
