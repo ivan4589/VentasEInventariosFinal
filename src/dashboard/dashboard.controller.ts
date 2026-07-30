@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Request, UseGuards } from '@nestjs/common';
 import { $Enums } from '../../generated/prisma/client';
 import { PERMISSIONS } from '../auth/authorization/permissions';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -16,8 +16,21 @@ export class DashboardController {
   @Get('kpi')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   @Permissions(PERMISSIONS.DASHBOARD_VIEW)
-  getKPI(@Query() filters: DashboardFiltersDto) {
-    return this.dashboardService.getKPI(filters);
+  async getKPI(@Query() filters: DashboardFiltersDto, @Request() req: any) {
+    const result = await this.dashboardService.getKPI(filters);
+
+    if (req.user.role === $Enums.Role.ADMIN) {
+      return result;
+    }
+
+    const {
+      collectionToday: _collectionToday,
+      totalDebt: _totalDebt,
+      overdueAccounts: _overdueAccounts,
+      ...commercialOverview
+    } = result;
+
+    return commercialOverview;
   }
 
   @Get('profit-summary')
@@ -70,7 +83,7 @@ export class DashboardController {
   }
 
   @Get('low-stock')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   @Permissions(PERMISSIONS.INVENTORY_VIEW)
   getLowStock() {
     return this.dashboardService.getLowStock();
@@ -79,8 +92,22 @@ export class DashboardController {
   @Get('last-sales')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   @Permissions(PERMISSIONS.SALES_VIEW_ALL)
-  getLastSales(@Query() filters: DashboardFiltersDto) {
-    return this.dashboardService.getLastSales(filters);
+  async getLastSales(@Query() filters: DashboardFiltersDto, @Request() req: any) {
+    const sales = await this.dashboardService.getLastSales(filters);
+
+    if (req.user.role === $Enums.Role.ADMIN) {
+      return sales;
+    }
+
+    return sales.map(
+      ({
+        paymentStatus: _paymentStatus,
+        paid: _paid,
+        balance: _balance,
+        paymentMethods: _paymentMethods,
+        ...commercialSale
+      }) => commercialSale,
+    );
   }
 
   @Get('pending-purchases')
