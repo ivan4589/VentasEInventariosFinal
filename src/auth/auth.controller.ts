@@ -11,7 +11,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Request, Response } from 'express';
+import type { CookieOptions, Request, Response } from 'express';
 import { $Enums } from '../../generated/prisma/client';
 import { AuthSecurityCompletionService } from './auth-security-completion.service';
 import { AuthRateLimit } from './decorators/auth-rate-limit.decorator';
@@ -171,11 +171,12 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const token = dto.refreshToken || this.readCookie(request, 'refresh_token');
+    const remember = this.readCookie(request, 'remember_session') === '1';
     const result = await this.authService.refresh(
       token || '',
       this.context(request),
     );
-    return this.completeSession(result, response, true);
+    return this.completeSession(result, response, remember);
   }
 
   @Post('logout')
@@ -186,7 +187,7 @@ export class AuthController {
   ) {
     const token = dto.refreshToken || this.readCookie(request, 'refresh_token');
     const result = await this.authService.logout(token);
-    this.clearRefreshCookie(response);
+    this.clearSessionCookies(response);
     return result;
   }
 
@@ -218,7 +219,7 @@ export class AuthController {
       request.user.sessionId,
       this.context(request),
     );
-    if (result.currentSessionRevoked) this.clearRefreshCookie(response);
+    if (result.currentSessionRevoked) this.clearSessionCookies(response);
     return result;
   }
 
@@ -232,7 +233,7 @@ export class AuthController {
       request.user.id,
       this.context(request),
     );
-    this.clearRefreshCookie(response);
+    this.clearSessionCookies(response);
     return result;
   }
 
@@ -249,7 +250,7 @@ export class AuthController {
       dto,
       this.context(request),
     );
-    this.clearRefreshCookie(response);
+    this.clearSessionCookies(response);
     return result;
   }
 
@@ -327,19 +328,48 @@ export class AuthController {
     response: Response,
     remember: boolean,
   ) {
-    response.cookie('refresh_token', result.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      ...(remember ? { maxAge: 7 * 24 * 60 * 60 * 1000 } : {}),
-      path: '/api/auth',
-    });
+    const options = this.sessionCookieOptions(remember);
+    response.cookie('refresh_token', result.refreshToken, options);
+    response.cookie('remember_session', remember ? '1' : '0', options);
+
     const { refreshToken: _refreshToken, ...publicResult } = result;
     return publicResult;
   }
 
-  private clearRefreshCookie(response: Response) {
-    response.clearCookie('refresh_token', { path: '/api/auth' });
+  private clearSessionCookies(response: Response) {
+    const options = this.sessionCookieOptions(false);
+    response.clearCookie('refresh_token', options);
+    response.clearCookie('remember_session', options);
+  }
+
+  private sessionCookieOptions(remember: boolean): CookieOptions {
+    const configuredSameSite = (
+      process.env.COOKIE_SAME_SITE || 'lax'
+    ).toLowerCase();
+    const sameSite: CookieOptions['sameSite'] =
+      configuredSameSite === 'strict' || configuredSameSite === 'none'
+        ? configuredSameSite
+        : 'lax';
+    const secure =
+      process.env.NODE_ENV === 'production' ||
+      process.env.COOKIE_SECURE === 'true' ||
+      sameSite === 'none';
+    const configuredDays = Number(
+      process.env.REMEMBER_SESSION_TTL_DAYS || 7,
+    );
+    const rememberDays = Number.isFinite(configuredDays)
+      ? Math.min(Math.max(Math.trunc(configuredDays), 1), 30)
+      : 7;
+    const domain = process.env.COOKIE_DOMAIN?.trim();
+
+    return {
+      httpOnly: true,
+      secure,
+      sameSite,
+      path: '/api/auth',
+      ...(domain ? { domain } : {}),
+      ...(remember ? { maxAge: rememberDays * 24 * 60 * 60 * 1000 } : {}),
+    };
   }
 
   private readCookie(request: Request, name: string) {
