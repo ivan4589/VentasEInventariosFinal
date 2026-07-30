@@ -16,7 +16,7 @@ const VENDOR_ANALYTICS_REPORTS = new Set([
   'kardex',
 ]);
 
-const COLLECTOR_ANALYTICS_REPORTS = new Set(['low-stock']);
+const COLLECTOR_ANALYTICS_REPORTS = new Set<string>();
 
 @Injectable()
 export class DataScopeService {
@@ -43,6 +43,36 @@ export class DataScopeService {
     if (assignment?.assignedToId !== actor.id) {
       throw new ForbiddenException(
         'Solo puedes consultar ventas asignadas a tu usuario para cobranza',
+      );
+    }
+  }
+
+  async assertCanViewSaleFinancials(
+    saleId: string,
+    actor: AuthorizationActor,
+  ): Promise<void> {
+    if (actor.role === $Enums.Role.ADMIN) return;
+
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: {
+        userId: true,
+        collectionAssignment: {
+          select: { assignedToId: true },
+        },
+      },
+    });
+
+    if (!sale) throw new NotFoundException('Venta no encontrada');
+
+    const canView =
+      (actor.role === $Enums.Role.VENDEDOR && sale.userId === actor.id) ||
+      (actor.role === $Enums.Role.COBRADOR &&
+        sale.collectionAssignment?.assignedToId === actor.id);
+
+    if (!canView) {
+      throw new ForbiddenException(
+        'No tienes acceso a los pagos o saldos de esta venta',
       );
     }
   }
