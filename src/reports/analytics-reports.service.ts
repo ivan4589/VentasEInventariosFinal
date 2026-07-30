@@ -769,10 +769,7 @@ export class AnalyticsReportsService {
       client.total += sale.total;
 
       for (const detail of sale.details) {
-        const quantity = Math.max(
-          detail.quantity - detail.returnedQuantity,
-          0,
-        );
+        const quantity = Math.max(detail.quantity - detail.returnedQuantity, 0);
         client.quantities.set(
           detail.productId,
           (client.quantities.get(detail.productId) || 0) + quantity,
@@ -795,7 +792,7 @@ export class AnalyticsReportsService {
   private buildSalesMatrixHtml(
     matrix: Awaited<ReturnType<AnalyticsReportsService['salesMatrix']>>,
   ): string {
-    const productsPerPage = 8;
+    const productsPerPage = 18;
     const productPages =
       matrix.products.length > 0
         ? Array.from(
@@ -849,7 +846,10 @@ export class AnalyticsReportsService {
           )
           .join('');
         const productHeaders = products
-          .map((product) => `<th>${this.escapeHtml(product.name)}</th>`)
+          .map(
+            (product) =>
+              `<th class="product"><span>${this.escapeHtml(product.name)}</span></th>`,
+          )
           .join('');
         const rows = matrix.clients
           .map(
@@ -898,6 +898,60 @@ export class AnalyticsReportsService {
       })
       .join('');
 
+    const productSummary =
+      matrix.products.length && matrix.clients.length
+        ? `
+          <section class="summary-page page-break">
+            <header>
+              <h1>RESUMEN TOTAL DE PRODUCTOS VENDIDOS</h1>
+              ${matrix.periodLabel ? `<p><b>Periodo:</b> ${this.escapeHtml(matrix.periodLabel)}</p>` : ''}
+            </header>
+            <table class="summary-table">
+              <thead>
+                <tr>
+                  <th>N.º</th>
+                  <th>Proveedor</th>
+                  <th>Categoría</th>
+                  <th>Producto</th>
+                  <th>Clientes</th>
+                  <th>Cantidad total vendida</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${matrix.products
+                  .map((product, productIndex) => {
+                    const quantities = matrix.clients.map(
+                      (client) => client.quantities.get(product.id) || 0,
+                    );
+                    const clientCount = quantities.filter(
+                      (quantity) => quantity > 0,
+                    ).length;
+                    const totalQuantity = quantities.reduce(
+                      (total, quantity) => total + quantity,
+                      0,
+                    );
+
+                    return `
+                      <tr>
+                        <td class="number">${productIndex + 1}</td>
+                        <td>${this.escapeHtml(product.provider.companyName)}</td>
+                        <td>${this.escapeHtml(product.category.name)}</td>
+                        <td>${this.escapeHtml(product.name)}</td>
+                        <td class="quantity">${clientCount}</td>
+                        <td class="quantity">${this.escapeHtml(
+                          this.formatValue(
+                            this.roundQuantity(totalQuantity),
+                            'number',
+                          ),
+                        )}</td>
+                      </tr>`;
+                  })
+                  .join('')}
+              </tbody>
+            </table>
+          </section>`
+        : '';
+
     return `<!doctype html>
       <html lang="es">
         <head>
@@ -917,12 +971,32 @@ export class AnalyticsReportsService {
             tr { break-inside: avoid; }
             .number { text-align: center; width: 24px; }
             .client { min-width: 135px; width: 135px; }
+            th.product {
+              height: 150px;
+              padding: 4px 0;
+              vertical-align: bottom;
+              width: 34px;
+            }
+            th.product span {
+              display: inline-block;
+              line-height: 1;
+              max-height: 142px;
+              overflow: hidden;
+              text-align: left;
+              text-orientation: mixed;
+              transform: rotate(180deg);
+              white-space: nowrap;
+              writing-mode: vertical-rl;
+            }
             .quantity { text-align: center; }
             .observations { min-width: 105px; width: 105px; }
+            .summary-table th:nth-child(1) { width: 35px; }
+            .summary-table th:nth-child(5) { width: 75px; }
+            .summary-table th:nth-child(6) { width: 110px; }
             .empty { border: 1px dashed #777; padding: 15px; text-align: center; }
           </style>
         </head>
-        <body>${pages}</body>
+        <body>${pages}${productSummary}</body>
       </html>`;
   }
 
