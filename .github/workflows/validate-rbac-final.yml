@@ -1,0 +1,50 @@
+name: Validate RBAC Final
+
+on:
+  push:
+    branches:
+      - agent/roles-permisos-alcance-datos
+    paths:
+      - '.github/workflows/validate-rbac-final.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sistema_ventas?schema=public
+      JWT_SECRET: ci-only-final-rbac-secret-not-used-at-runtime
+      TWO_FACTOR_ENCRYPTION_KEY: ci-only-final-rbac-encryption-key-not-used-at-runtime
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/roles-permisos-alcance-datos
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Validate current branch
+        id: validate
+        continue-on-error: true
+        run: |
+          npm ci
+          npx prisma validate
+          npx prisma generate
+          npm run build
+          npm test -- --runInBand permissions.spec.ts auth
+      - name: Save result
+        shell: bash
+        run: |
+          {
+            echo "RBAC_FINAL_OUTCOME=${{ steps.validate.outcome }}"
+            echo "Validated at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > .github/rbac-final-validation.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/rbac-final-validation.txt
+          git commit -m "Registra validación final RBAC"
+          git push origin HEAD:agent/roles-permisos-alcance-datos
+          test "${{ steps.validate.outcome }}" = "success"
