@@ -72,17 +72,21 @@ export class AuthRateLimitGuard implements CanActivate {
   }
 
   private keyFor(request: Request, options: AuthRateLimitOptions) {
-    const forwarded = request.headers['x-forwarded-for'];
-    const ip = Array.isArray(forwarded)
-      ? forwarded[0]
-      : forwarded?.split(',')[0]?.trim() || request.ip || 'unknown';
-    const email = options.includeEmail
-      ? String((request.body as { email?: string } | undefined)?.email || '')
-          .trim()
-          .toLowerCase()
-      : '';
+    const ip = request.ip || request.socket.remoteAddress || 'unknown';
+    const body = (request.body || {}) as Record<string, unknown>;
+    const fields = new Set(options.bodyFields || []);
+    if (options.includeEmail) fields.add('email');
 
-    return `${request.method}:${request.route?.path || request.path}:${ip}:${email}`;
+    const bodyKey = Array.from(fields)
+      .sort()
+      .map((field) => {
+        const value = String(body[field] ?? '').trim();
+        const normalized = field === 'email' ? value.toLowerCase() : value;
+        return `${field}=${normalized}`;
+      })
+      .join('&');
+
+    return `${request.method}:${request.route?.path || request.path}:${ip}:${bodyKey}`;
   }
 
   private cleanup(now: number) {
