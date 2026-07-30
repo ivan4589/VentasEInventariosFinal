@@ -11,12 +11,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { $Enums } from '../../generated/prisma/client';
+import { PERMISSIONS } from '../auth/authorization/permissions';
+import { Permissions } from '../auth/decorators/permissions.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { PurchasesService } from './purchases.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
+import { PurchasesService } from './purchases.service';
 
 @Controller('purchases')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -24,7 +26,8 @@ export class PurchasesController {
   constructor(private readonly purchasesService: PurchasesService) {}
 
   @Get()
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.PURCHASES_VIEW)
   findAll(
     @Query('status') status?: $Enums.PurchaseStatus,
     @Query('providerId') providerId?: string,
@@ -40,19 +43,22 @@ export class PurchasesController {
   }
 
   @Get(':id')
-  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.PURCHASES_VIEW)
   findOne(@Param('id') id: string) {
     return this.purchasesService.findOne(id);
   }
 
   @Post()
   @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.PURCHASES_MANAGE)
   create(@Body() createPurchaseDto: CreatePurchaseDto, @Request() req: any) {
     return this.purchasesService.create(createPurchaseDto, req.user.id);
   }
 
   @Patch(':id')
   @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.PURCHASES_MANAGE)
   update(
     @Param('id') id: string,
     @Body() updatePurchaseDto: UpdatePurchaseDto,
@@ -62,10 +68,10 @@ export class PurchasesController {
 
   @Patch(':id/providers/:purchaseProviderId/receive')
   @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.PURCHASES_MANAGE)
   receiveProvider(
     @Param('id') id: string,
-    @Param('purchaseProviderId')
-    purchaseProviderId: string,
+    @Param('purchaseProviderId') purchaseProviderId: string,
     @Request() req: any,
   ) {
     return this.purchasesService.receiveProvider(
@@ -77,10 +83,10 @@ export class PurchasesController {
 
   @Patch(':id/providers/:purchaseProviderId/cancel')
   @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.PURCHASES_MANAGE)
   cancelProvider(
     @Param('id') id: string,
-    @Param('purchaseProviderId')
-    purchaseProviderId: string,
+    @Param('purchaseProviderId') purchaseProviderId: string,
     @Request() req: any,
   ) {
     return this.purchasesService.cancelProvider(
@@ -92,6 +98,7 @@ export class PurchasesController {
 
   @Delete(':id')
   @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.PURCHASES_MANAGE)
   cancel(@Param('id') id: string, @Request() req: any) {
     return this.purchasesService.cancel(id, req.user.id);
   }
