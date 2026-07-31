@@ -29,14 +29,30 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Repair lockfile when required
+      - name: Correct status validations and lockfile
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/users/users.service.ts')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              '].includes(currentUser.status)',
+              '].some((value) => value === currentUser.status)',
+              1,
+          )
+          text = text.replace(
+              '].includes(status)',
+              '].some((value) => value === status)',
+              1,
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
           npm install --package-lock-only --ignore-scripts
-          if ! git diff --quiet -- package-lock.json; then
+          if ! git diff --quiet -- src/users/users.service.ts package-lock.json; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git commit -m "Sincroniza package-lock de administración segura"
+            git add src/users/users.service.ts package-lock.json
+            git commit -m "Corrige validación de estados de usuario"
             git push origin HEAD:agent/administracion-segura-usuarios
           fi
       - run: npm ci
