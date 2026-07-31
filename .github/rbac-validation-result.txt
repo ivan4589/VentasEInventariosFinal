@@ -6,7 +6,7 @@ npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and con
 npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
-added 864 packages, and audited 865 packages in 20s
+added 864 packages, and audited 865 packages in 17s
 
 169 packages are looking for funding
   run `npm fund` for details
@@ -37,7 +37,7 @@ Prisma schema loaded from prisma/schema.prisma.
 │    npm i @prisma/client@latest                          │
 └─────────────────────────────────────────────────────────┘
 
-✔ Generated Prisma Client (7.8.0) to ./generated/prisma in 367ms
+✔ Generated Prisma Client (7.8.0) to ./generated/prisma in 337ms
 
 EXIT_CODE=0
 
@@ -61,9 +61,9 @@ PASS src/auth/auth.controller.spec.ts
 Test Suites: 4 passed, 4 total
 Tests:       11 passed, 11 total
 Snapshots:   0 total
-Time:        2.625 s
+Time:        2.671 s
 Ran all test suites matching permissions.spec.ts|auth.
 EXIT_CODE=0
 
 RBAC_BACKEND_FINAL_STATUS=0
-Validated at 2026-07-30T23:50:15Z
+Validated at 2026-07-31T00:07:11Z
