@@ -1,3 +1,4 @@
+# phase2-foundation-revision: 2
 name: Phase 2 economic integrity foundation
 
 on:
@@ -32,13 +33,6 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          def replace_once(path: str, old: str, new: str):
-              file = Path(path)
-              text = file.read_text(encoding='utf-8')
-              if old not in text:
-                  raise SystemExit(f'No se encontró el bloque esperado en {path}: {old[:120]!r}')
-              file.write_text(text.replace(old, new, 1), encoding='utf-8')
-
           schema = Path('prisma/schema.prisma')
           text = schema.read_text(encoding='utf-8')
 
@@ -49,21 +43,21 @@ jobs:
                   1,
               )
 
-          if 'idempotencyKey   String?        @unique' not in text:
+          if 'idempotencyKey String?        @unique' not in text:
               text = text.replace(
                   'model Purchase {\n  id             String         @id @default(cuid())\n',
-                  'model Purchase {\n  id             String         @id @default(cuid())\n  idempotencyKey String?        @unique\n  cancelledById  Int?\n  cancellationReason String?\n',
+                  'model Purchase {\n  id                 String         @id @default(cuid())\n  idempotencyKey     String?        @unique\n  cancelledById      Int?\n  cancellationReason String?\n',
                   1,
               )
 
-          if 'receivedById Int?' not in text:
+          if 'receivedById' not in text:
               text = text.replace(
                   'model PurchaseProvider {\n  id          String                 @id @default(cuid())\n',
-                  'model PurchaseProvider {\n  id          String                 @id @default(cuid())\n  receivedById Int?\n  cancelledById Int?\n  cancellationReason String?\n',
+                  'model PurchaseProvider {\n  id                 String                 @id @default(cuid())\n  receivedById       Int?\n  cancelledById      Int?\n  cancellationReason String?\n',
                   1,
               )
 
-          if 'confirmedById        Int?' not in text:
+          if 'confirmedById' not in text:
               text = text.replace(
                   'model Sale {\n  id                   String               @id @default(cuid())\n',
                   'model Sale {\n  id                   String               @id @default(cuid())\n  idempotencyKey       String?              @unique\n  confirmedById        Int?\n  cancelledById        Int?\n  cancellationReason   String?\n',
@@ -84,7 +78,7 @@ jobs:
                   1,
               )
 
-          if 'model WarehouseTransfer {\n  id                     String' not in text:
+          if 'idempotencyKey         String?' not in text:
               text = text.replace(
                   'model WarehouseTransfer {\n  id                     String                  @id @default(cuid())\n',
                   'model WarehouseTransfer {\n  id                     String                  @id @default(cuid())\n  idempotencyKey         String?                 @unique\n  cancelledById          Int?\n  cancellationReason     String?\n',
@@ -116,6 +110,16 @@ jobs:
                   raise SystemExit('No se encontró ReportHistory para insertar auditoría económica')
               text = text.replace(marker, model + marker, 1)
 
+          required = [
+              'EconomicAuditLog[]',
+              'model EconomicAuditLog {',
+              'idempotencyKey       String?              @unique',
+              'reversalOfId',
+              'idempotencyKey         String?                 @unique',
+          ]
+          missing = [value for value in required if value not in text]
+          if missing:
+              raise SystemExit(f'No se aplicó la base del esquema: {missing}')
           schema.write_text(text, encoding='utf-8')
 
           Path('src/economic-integrity/dto').mkdir(parents=True, exist_ok=True)
@@ -168,20 +172,12 @@ export async function lockEconomicResources(
 ): Promise<void> {
   const ordered = [...new Set(resources.filter(Boolean))].sort();
   for (const resource of ordered) {
-    if (typeof tx.$queryRawUnsafe !== 'function') {
-      continue;
-    }
+    if (typeof tx.$queryRawUnsafe !== 'function') continue;
     await tx.$queryRawUnsafe(
       'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
       resource,
     );
   }
-}
-
-export async function findEconomicAuditByKey(tx: any, operationKey: string) {
-  return tx.economicAuditLog.findUnique({
-    where: { operationKey },
-  });
 }
 
 export async function recordEconomicAudit(
@@ -268,21 +264,17 @@ ALTER TABLE "purchases"
   ADD COLUMN IF NOT EXISTS "idempotencyKey" TEXT,
   ADD COLUMN IF NOT EXISTS "cancelledById" INTEGER,
   ADD COLUMN IF NOT EXISTS "cancellationReason" TEXT;
-
 ALTER TABLE "purchase_providers"
   ADD COLUMN IF NOT EXISTS "receivedById" INTEGER,
   ADD COLUMN IF NOT EXISTS "cancelledById" INTEGER,
   ADD COLUMN IF NOT EXISTS "cancellationReason" TEXT;
-
 ALTER TABLE "sales"
   ADD COLUMN IF NOT EXISTS "idempotencyKey" TEXT,
   ADD COLUMN IF NOT EXISTS "confirmedById" INTEGER,
   ADD COLUMN IF NOT EXISTS "cancelledById" INTEGER,
   ADD COLUMN IF NOT EXISTS "cancellationReason" TEXT;
-
 ALTER TABLE "sale_returns"
   ADD COLUMN IF NOT EXISTS "idempotencyKey" TEXT;
-
 ALTER TABLE "payments"
   ADD COLUMN IF NOT EXISTS "idempotencyKey" TEXT,
   ADD COLUMN IF NOT EXISTS "reversalOfId" TEXT,
@@ -290,24 +282,17 @@ ALTER TABLE "payments"
   ADD COLUMN IF NOT EXISTS "cancelledAt" TIMESTAMP(3),
   ADD COLUMN IF NOT EXISTS "cancelledById" INTEGER,
   ADD COLUMN IF NOT EXISTS "cancellationReason" TEXT;
-
 ALTER TABLE "warehouse_transfers"
   ADD COLUMN IF NOT EXISTS "idempotencyKey" TEXT,
   ADD COLUMN IF NOT EXISTS "cancelledById" INTEGER,
   ADD COLUMN IF NOT EXISTS "cancellationReason" TEXT;
 
-CREATE UNIQUE INDEX IF NOT EXISTS "purchases_idempotencyKey_key"
-  ON "purchases"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS "sales_idempotencyKey_key"
-  ON "sales"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS "sale_returns_idempotencyKey_key"
-  ON "sale_returns"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS "payments_idempotencyKey_key"
-  ON "payments"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS "payments_reversalOfId_key"
-  ON "payments"("reversalOfId") WHERE "reversalOfId" IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS "warehouse_transfers_idempotencyKey_key"
-  ON "warehouse_transfers"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "purchases_idempotencyKey_key" ON "purchases"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "sales_idempotencyKey_key" ON "sales"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "sale_returns_idempotencyKey_key" ON "sale_returns"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "payments_idempotencyKey_key" ON "payments"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "payments_reversalOfId_key" ON "payments"("reversalOfId") WHERE "reversalOfId" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "warehouse_transfers_idempotencyKey_key" ON "warehouse_transfers"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS "economic_audit_logs" (
   "id" TEXT NOT NULL,
@@ -321,37 +306,21 @@ CREATE TABLE IF NOT EXISTS "economic_audit_logs" (
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "economic_audit_logs_pkey" PRIMARY KEY ("id")
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "economic_audit_logs_operationKey_key"
-  ON "economic_audit_logs"("operationKey") WHERE "operationKey" IS NOT NULL;
-CREATE INDEX IF NOT EXISTS "economic_audit_logs_userId_createdAt_idx"
-  ON "economic_audit_logs"("userId", "createdAt");
-CREATE INDEX IF NOT EXISTS "economic_audit_logs_entityType_entityId_idx"
-  ON "economic_audit_logs"("entityType", "entityId");
-CREATE INDEX IF NOT EXISTS "economic_audit_logs_action_createdAt_idx"
-  ON "economic_audit_logs"("action", "createdAt");
-
+CREATE UNIQUE INDEX IF NOT EXISTS "economic_audit_logs_operationKey_key" ON "economic_audit_logs"("operationKey") WHERE "operationKey" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "economic_audit_logs_userId_createdAt_idx" ON "economic_audit_logs"("userId", "createdAt");
+CREATE INDEX IF NOT EXISTS "economic_audit_logs_entityType_entityId_idx" ON "economic_audit_logs"("entityType", "entityId");
+CREATE INDEX IF NOT EXISTS "economic_audit_logs_action_createdAt_idx" ON "economic_audit_logs"("action", "createdAt");
 DO $$ BEGIN
-  ALTER TABLE "economic_audit_logs"
-    ADD CONSTRAINT "economic_audit_logs_userId_fkey"
-    FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  ALTER TABLE "economic_audit_logs" ADD CONSTRAINT "economic_audit_logs_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
 DO $$ BEGIN
-  ALTER TABLE "warehouse_stocks"
-    ADD CONSTRAINT "warehouse_stocks_non_negative_check"
-    CHECK ("stock" >= 0 AND "reservedStock" >= 0) NOT VALID;
+  ALTER TABLE "warehouse_stocks" ADD CONSTRAINT "warehouse_stocks_non_negative_check" CHECK ("stock" >= 0 AND "reservedStock" >= 0) NOT VALID;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
 DO $$ BEGIN
-  ALTER TABLE "Product"
-    ADD CONSTRAINT "products_non_negative_stock_check"
-    CHECK ("stock" >= 0 AND "reservedStock" >= 0) NOT VALID;
+  ALTER TABLE "Product" ADD CONSTRAINT "products_non_negative_stock_check" CHECK ("stock" >= 0 AND "reservedStock" >= 0) NOT VALID;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
 DO $$ BEGIN
-  ALTER TABLE "payments"
-    ADD CONSTRAINT "payments_non_zero_amount_check"
-    CHECK ("amount" <> 0) NOT VALID;
+  ALTER TABLE "payments" ADD CONSTRAINT "payments_non_zero_amount_check" CHECK ("amount" <> 0) NOT VALID;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 ''', encoding='utf-8')
           PY
