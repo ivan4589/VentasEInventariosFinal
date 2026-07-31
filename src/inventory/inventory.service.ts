@@ -323,6 +323,118 @@ export class InventoryService {
     });
   }
 
+
+  async getStockPosition(warehouseId: string, productId: string) {
+    const position = await this.prisma.warehouseStock.findUnique({
+      where: { warehouseId_productId: { warehouseId, productId } },
+      include: {
+        warehouse: { select: { id: true, name: true } },
+        product: { select: { id: true, name: true } },
+      },
+    });
+    if (!position) throw new BadRequestException('No existe stock para el producto');
+    return {
+      warehouseId,
+      warehouseName: position.warehouse.name,
+      productId,
+      productName: position.product.name,
+      previousStock: position.stock,
+      quantityChange: 0,
+      newStock: position.stock,
+      reservedStock: position.reservedStock,
+    };
+  }
+
+  async adjustStock(
+    dto: import('./dto/adjust-inventory.dto').AdjustInventoryDto,
+    userId: number,
+  ) {
+    return this.prisma.$transaction(async (prisma) => {
+      const [warehouse, product, current] = await Promise.all([
+        prisma.warehouse.findFirst({
+          where: { id: dto.warehouseId, isActive: true },
+          select: { id: true, name: true },
+        }),
+        prisma.product.findUnique({
+          where: { id: dto.productId },
+          select: { id: true, name: true, stock: true },
+        }),
+        prisma.warehouseStock.findUnique({
+          where: {
+            warehouseId_productId: {
+              warehouseId: dto.warehouseId,
+              productId: dto.productId,
+            },
+          },
+          select: { stock: true, reservedStock: true },
+        }),
+      ]);
+
+      if (!warehouse) throw new BadRequestException('Almacén no disponible');
+      if (!product) throw new BadRequestException('Producto no encontrado');
+
+      const previousStock = this.roundQuantity(current?.stock || 0);
+      const reservedStock = this.roundQuantity(current?.reservedStock || 0);
+      const newStock = this.roundQuantity(previousStock + dto.quantityChange);
+      const globalStock = this.roundQuantity(product.stock + dto.quantityChange);
+
+      if (newStock < 0 || globalStock < 0) {
+        throw new BadRequestException('El ajuste dejaría el stock en negativo');
+      }
+      if (newStock < reservedStock) {
+        throw new BadRequestException(
+          'El ajuste no puede dejar el stock por debajo de la cantidad reservada',
+        );
+      }
+
+      await prisma.warehouseStock.upsert({
+        where: {
+          warehouseId_productId: {
+            warehouseId: dto.warehouseId,
+            productId: dto.productId,
+          },
+        },
+        create: {
+          warehouseId: dto.warehouseId,
+          productId: dto.productId,
+          stock: newStock,
+        },
+        update: { stock: newStock },
+      });
+      await prisma.product.update({
+        where: { id: dto.productId },
+        data: { stock: globalStock },
+      });
+      const movement = await prisma.inventoryMovement.create({
+        data: {
+          warehouseId: dto.warehouseId,
+          productId: dto.productId,
+          userId,
+          type:
+            dto.quantityChange > 0
+              ? $Enums.InventoryMovementType.ADJUSTMENT_IN
+              : $Enums.InventoryMovementType.ADJUSTMENT_OUT,
+          quantity: Math.abs(dto.quantityChange),
+          previousStock,
+          newStock,
+          observations: dto.reason.trim(),
+        },
+      });
+
+      return {
+        movementId: movement.id,
+        warehouseId: warehouse.id,
+        warehouseName: warehouse.name,
+        productId: product.id,
+        productName: product.name,
+        previousStock,
+        quantityChange: dto.quantityChange,
+        newStock,
+        reservedStock,
+      };
+    });
+  }
+
   private buildInventoryHTML(inventory: InventoryResponseDto): string {
     const providersHTML = inventory.providers
       .map((provider) => {

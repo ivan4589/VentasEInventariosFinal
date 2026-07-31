@@ -32,6 +32,10 @@ export class PaymentsService {
       method: payment.method,
       reference: payment.reference,
       observations: payment.observations,
+      isReversal: payment.isReversal ?? false,
+      reversalOfId: payment.reversalOfId ?? null,
+      cancelledAt: payment.cancelledAt ?? null,
+      cancellationReason: payment.cancellationReason ?? null,
       receivedAt: payment.receivedAt,
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
@@ -59,58 +63,74 @@ export class PaymentsService {
       id: number;
       role: $Enums.Role;
     },
+    operationKey: string,
   ): Promise<PaymentResponseDto> {
+    const existing = await this.prisma.payment.findUnique({
+      where: { idempotencyKey: operationKey },
+      include: { client: true, user: true },
+    });
+    if (existing) return this.toResponse(existing);
+
     const { saleId, clientId, amount, method, reference, observations } =
       createPaymentDto;
 
-    const sale = await this.prisma.sale.findUnique({
-      where: { id: saleId },
-      include: {
-        payments: true,
-        client: true,
-      },
-    });
-
-    if (!sale) {
-      throw new NotFoundException('Venta no encontrada');
-    }
-
-    if (sale.status === $Enums.SaleStatus.CANCELLED) {
+    if (
+      method !== $Enums.PaymentMethod.CASH &&
+      (!reference || reference.trim().length < 3)
+    ) {
       throw new BadRequestException(
-        'No se puede registrar pagos en una venta anulada',
-      );
-    }
-
-    if (sale.status !== $Enums.SaleStatus.CONFIRMED) {
-      throw new BadRequestException(
-        'Solo se puede registrar pagos en ventas confirmadas',
-      );
-    }
-
-    if (sale.clientId !== clientId) {
-      throw new BadRequestException(
-        'El cliente no coincide con el de la venta',
+        'Los pagos por QR o transferencia requieren una referencia',
       );
     }
 
     await this.collectionsService.assertCanCollect(saleId, actor);
 
-    const alreadyPaid = sale.payments.reduce(
-      (sum, payment) => sum + payment.amount,
-      0,
-    );
-
-    const totalPaid = alreadyPaid + amount;
-
-    if (totalPaid > sale.total) {
-      throw new BadRequestException(
-        `El monto total pagado (${totalPaid}) excede el total de la venta (${sale.total})`,
-      );
-    }
-
-    const newPaymentStatus = this.calculatePaymentStatus(sale.total, totalPaid);
-
     return this.prisma.$transaction(async (prisma) => {
+      const sale = await prisma.sale.findUnique({
+        where: { id: saleId },
+        include: { payments: true, client: true },
+      });
+
+      if (!sale) throw new NotFoundException('Venta no encontrada');
+      if (sale.status !== $Enums.SaleStatus.CONFIRMED) {
+        throw new BadRequestException(
+          'Solo se puede registrar pagos en ventas confirmadas',
+        );
+      }
+      if (sale.clientId !== clientId) {
+        throw new BadRequestException(
+          'El cliente no coincide con el de la venta',
+        );
+      }
+
+      if (reference?.trim()) {
+        const duplicateReference = await prisma.payment.findFirst({
+          where: {
+            method,
+            reference: reference.trim(),
+            isReversal: false,
+            cancelledAt: null,
+          },
+          select: { id: true },
+        });
+        if (duplicateReference) {
+          throw new BadRequestException(
+            'La referencia de pago ya fue registrada anteriormente',
+          );
+        }
+      }
+
+      const alreadyPaid = sale.payments.reduce(
+        (sum, payment) => sum + payment.amount,
+        0,
+      );
+      const totalPaid = Math.round((alreadyPaid + amount) * 100) / 100;
+      if (totalPaid > sale.total) {
+        throw new BadRequestException(
+          `El pago supera el saldo pendiente de la venta`,
+        );
+      }
+
       const payment = await prisma.payment.create({
         data: {
           saleId,
@@ -118,19 +138,17 @@ export class PaymentsService {
           userId: actor.id,
           amount,
           method,
-          reference,
+          reference: reference?.trim() || null,
           observations,
+          idempotencyKey: operationKey,
         },
-        include: {
-          client: true,
-          user: true,
-        },
+        include: { client: true, user: true },
       });
 
       await prisma.sale.update({
         where: { id: saleId },
         data: {
-          paymentStatus: newPaymentStatus,
+          paymentStatus: this.calculatePaymentStatus(sale.total, totalPaid),
         },
       });
 
@@ -139,130 +157,90 @@ export class PaymentsService {
   }
 
   async update(
-    id: string,
-    updatePaymentDto: UpdatePaymentDto,
+    _id: string,
+    _updatePaymentDto: UpdatePaymentDto,
   ): Promise<PaymentResponseDto> {
-    const existingPayment = await this.prisma.payment.findUnique({
-      where: { id },
-      include: {
-        sale: {
-          include: {
-            payments: true,
-          },
-        },
-      },
+    throw new BadRequestException(
+      'Los pagos confirmados son inmutables. Debes anularlos mediante una reversión',
+    );
+  }
+
+  async remove(
+    id: string,
+    actorId: number,
+    reason: string,
+    operationKey: string,
+  ): Promise<PaymentResponseDto> {
+    const existingByKey = await this.prisma.payment.findUnique({
+      where: { idempotencyKey: operationKey },
+      include: { client: true, user: true },
     });
-
-    if (!existingPayment) {
-      throw new NotFoundException('Pago no encontrado');
-    }
-
-    const sale = existingPayment.sale;
-
-    if (sale.status === $Enums.SaleStatus.CANCELLED) {
-      throw new BadRequestException(
-        'No se puede editar pagos en una venta anulada',
-      );
-    }
-
-    const newAmount =
-      updatePaymentDto.amount !== undefined
-        ? updatePaymentDto.amount
-        : existingPayment.amount;
-
-    const totalPaid = sale.payments.reduce((sum, payment) => {
-      if (payment.id === id) {
-        return sum + newAmount;
-      }
-
-      return sum + payment.amount;
-    }, 0);
-
-    if (totalPaid > sale.total) {
-      throw new BadRequestException(
-        `El monto total pagado (${totalPaid}) excede el total de la venta (${sale.total})`,
-      );
-    }
-
-    const newPaymentStatus = this.calculatePaymentStatus(sale.total, totalPaid);
+    if (existingByKey) return this.toResponse(existingByKey);
 
     return this.prisma.$transaction(async (prisma) => {
-      const updated = await prisma.payment.update({
+      const payment = await prisma.payment.findUnique({
         where: { id },
-        data: {
-          amount: newAmount,
-          method: updatePaymentDto.method,
-          reference: updatePaymentDto.reference,
-          observations: updatePaymentDto.observations,
-        },
         include: {
           client: true,
           user: true,
+          sale: { include: { payments: true } },
         },
       });
 
-      await prisma.sale.update({
-        where: { id: sale.id },
+      if (!payment) throw new NotFoundException('Pago no encontrado');
+      if (payment.isReversal) {
+        throw new BadRequestException('No se puede anular una reversión');
+      }
+      if (payment.cancelledAt) {
+        const reversal = await prisma.payment.findUnique({
+          where: { reversalOfId: payment.id },
+          include: { client: true, user: true },
+        });
+        if (reversal) return this.toResponse(reversal);
+        throw new BadRequestException('El pago ya está anulado');
+      }
+
+      const reversal = await prisma.payment.create({
         data: {
-          paymentStatus: newPaymentStatus,
+          saleId: payment.saleId,
+          clientId: payment.clientId,
+          userId: actorId,
+          amount: -payment.amount,
+          method: payment.method,
+          reference: `REV-${payment.id}`,
+          observations: `Reversión: ${reason}`,
+          idempotencyKey: operationKey,
+          reversalOfId: payment.id,
+          isReversal: true,
+        },
+        include: { client: true, user: true },
+      });
+
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          cancelledAt: new Date(),
+          cancelledById: actorId,
+          cancellationReason: reason,
         },
       });
 
-      return this.toResponse(updated);
-    });
-  }
-
-  async remove(id: string) {
-    const payment = await this.prisma.payment.findUnique({
-      where: { id },
-      include: {
-        sale: {
-          include: {
-            payments: true,
-          },
-        },
-      },
-    });
-
-    if (!payment) {
-      throw new NotFoundException('Pago no encontrado');
-    }
-
-    const sale = payment.sale;
-
-    if (sale.status === $Enums.SaleStatus.CANCELLED) {
-      throw new BadRequestException(
-        'No se puede eliminar pagos en una venta anulada',
+      const totalPaid = payment.sale.payments.reduce(
+        (sum, current) => sum + current.amount,
+        -payment.amount,
       );
-    }
-
-    const remainingPayments = sale.payments.filter(
-      (currentPayment) => currentPayment.id !== id,
-    );
-
-    const totalPaid = remainingPayments.reduce(
-      (sum, currentPayment) => sum + currentPayment.amount,
-      0,
-    );
-
-    const newPaymentStatus = this.calculatePaymentStatus(sale.total, totalPaid);
-
-    await this.prisma.$transaction(async (prisma) => {
-      await prisma.payment.delete({
-        where: { id },
-      });
-
       await prisma.sale.update({
-        where: { id: sale.id },
+        where: { id: payment.saleId },
         data: {
-          paymentStatus: newPaymentStatus,
+          paymentStatus: this.calculatePaymentStatus(
+            payment.sale.total,
+            totalPaid,
+          ),
         },
       });
-    });
 
-    return {
-      message: 'Pago eliminado correctamente',
-    };
+      return this.toResponse(reversal);
+    });
   }
 
   async findAll(filters?: {

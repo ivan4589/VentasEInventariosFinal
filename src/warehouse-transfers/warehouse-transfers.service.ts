@@ -93,7 +93,16 @@ export class WarehouseTransfersService {
     return transfer;
   }
 
-  async create(dto: CreateWarehouseTransferDto, userId: number) {
+  async create(
+    dto: CreateWarehouseTransferDto,
+    userId: number,
+    operationKey: string,
+  ) {
+    const existing = await this.prisma.warehouseTransfer.findFirst({
+      where: { idempotencyKey: operationKey },
+      select: { id: true },
+    });
+    if (existing) return this.findOne(existing.id);
     if (dto.originWarehouseId === dto.destinationWarehouseId) {
       throw new BadRequestException(
         'El almacén de origen y el de destino deben ser diferentes',
@@ -164,6 +173,7 @@ export class WarehouseTransfersService {
       const transfer = await tx.warehouseTransfer.create({
         data: {
           transferNumber,
+          idempotencyKey: operationKey,
           originWarehouseId: originWarehouse.id,
           destinationWarehouseId: destinationWarehouse.id,
           userId,
@@ -203,7 +213,7 @@ export class WarehouseTransfersService {
     });
   }
 
-  async cancel(id: string, userId: number) {
+  async cancel(id: string, userId: number, reason: string) {
     return this.prisma.$transaction(async (tx) => {
       const transfer = await tx.warehouseTransfer.findUnique({
         where: { id },
@@ -237,7 +247,10 @@ export class WarehouseTransfersService {
       }
 
       if (transfer.status === $Enums.WarehouseTransferStatus.CANCELLED) {
-        throw new BadRequestException('La transferencia ya fue anulada');
+        return tx.warehouseTransfer.findUnique({
+          where: { id },
+          include: this.transferInclude(),
+        });
       }
 
       const locked = await tx.warehouseTransfer.updateMany({
@@ -248,6 +261,8 @@ export class WarehouseTransfersService {
         data: {
           status: $Enums.WarehouseTransferStatus.CANCELLED,
           cancelledAt: new Date(),
+          cancelledById: userId,
+          cancellationReason: reason,
         },
       });
 

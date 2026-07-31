@@ -1,8 +1,8 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -13,15 +13,13 @@ import {
 import { $Enums } from '../../generated/prisma/client';
 import { DataScopeService } from '../auth/authorization/data-scope.service';
 import { PERMISSIONS } from '../auth/authorization/permissions';
-import {
-  AnyPermissions,
-  Permissions,
-} from '../auth/decorators/permissions.decorator';
+import { AnyPermissions, Permissions } from '../auth/decorators/permissions.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { CancelEconomicOperationDto } from '../economic-integrity/dto/cancel-economic-operation.dto';
+import { EconomicIntegrityService } from '../economic-integrity/economic-integrity.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
-import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { PaymentsService } from './payments.service';
 
 @Controller('payments')
@@ -30,6 +28,7 @@ export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
     private readonly dataScope: DataScopeService,
+    private readonly integrity: EconomicIntegrityService,
   ) {}
 
   @Get()
@@ -110,21 +109,55 @@ export class PaymentsController {
   @Post()
   @Roles($Enums.Role.ADMIN, $Enums.Role.COBRADOR)
   @Permissions(PERMISSIONS.PAYMENTS_CREATE_ASSIGNED)
-  create(@Body() createPaymentDto: CreatePaymentDto, @Request() req: any) {
-    return this.paymentsService.create(createPaymentDto, req.user);
+  create(
+    @Body() dto: CreatePaymentDto,
+    @Request() req: any,
+    @Headers('idempotency-key') operationKey?: string,
+  ) {
+    return this.integrity.run({
+      operationKey,
+      locks: [`sale:${dto.saleId}`],
+      userId: req.user.id,
+      action: 'PAYMENT_REGISTERED',
+      entityType: 'PAYMENT',
+      execute: async (key) => {
+        const value = await this.paymentsService.create(dto, req.user, key);
+        return {
+          entityId: value.id,
+          value,
+          details: { saleId: value.saleId, amount: value.amount, method: value.method },
+        };
+      },
+      resolveExisting: (id) => this.paymentsService.findOne(id),
+    });
   }
 
-  @Patch(':id')
-  @Roles($Enums.Role.ADMIN)
-  @Permissions(PERMISSIONS.PAYMENTS_UPDATE)
-  update(@Param('id') id: string, @Body() updatePaymentDto: UpdatePaymentDto) {
-    return this.paymentsService.update(id, updatePaymentDto);
-  }
-
-  @Delete(':id')
+  @Patch(':id/cancel')
   @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.PAYMENTS_CANCEL)
-  remove(@Param('id') id: string) {
-    return this.paymentsService.remove(id);
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: CancelEconomicOperationDto,
+    @Request() req: any,
+    @Headers('idempotency-key') operationKey?: string,
+  ) {
+    const reason = this.integrity.reason(dto.reason, 'anular el pago');
+    return this.integrity.run({
+      operationKey,
+      locks: [`payment:${id}`],
+      userId: req.user.id,
+      action: 'PAYMENT_REVERSED',
+      entityType: 'PAYMENT',
+      reason,
+      execute: async (key) => {
+        const value = await this.paymentsService.remove(id, req.user.id, reason, key);
+        return {
+          entityId: value.id,
+          value,
+          details: { originalPaymentId: id, reversalAmount: value.amount },
+        };
+      },
+      resolveExisting: (reversalId) => this.paymentsService.findOne(reversalId),
+    });
   }
 }

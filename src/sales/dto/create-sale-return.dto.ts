@@ -3,7 +3,8 @@ import {
   IsArray,
   IsInt,
   IsNotEmpty,
-  IsOptional,
+  MaxLength,
+  MinLength,
   IsString,
   Min,
   ValidateNested,
@@ -28,7 +29,8 @@ export class CreateSaleReturnDto {
   @Type(() => SaleReturnDetailDto)
   details: SaleReturnDetailDto[];
 
-  @IsOptional()
   @IsString()
-  observations?: string;
+  @MinLength(10)
+  @MaxLength(500)
+  observations: string;
 }
