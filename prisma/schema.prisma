@@ -67,52 +67,53 @@ enum UserAdministrationAction {
 }
 
 model User {
-  id                    Int        @id @default(autoincrement())
-  name                  String
-  email                 String     @unique
-  password              String
-  role                  Role       @default(VENDEDOR)
-  isActive              Boolean    @default(true)
-  status                UserStatus @default(ACTIVE)
-  requestedRole         Role?
-  phone                 String?
-  emailVerifiedAt       DateTime?
-  approvedAt            DateTime?
-  approvedById          Int?
-  rejectedAt            DateTime?
-  rejectionReason       String?
-  failedLoginAttempts   Int        @default(0)
-  lockedUntil           DateTime?
-  passwordChangedAt     DateTime?
-  mustChangePassword    Boolean    @default(false)
-  twoFactorEnabled      Boolean    @default(false)
-  twoFactorVerifiedAt   DateTime?
-  securityVersion       Int        @default(1)
-  lastLoginAt           DateTime?
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
+  id                  Int        @id @default(autoincrement())
+  name                String
+  email               String     @unique
+  password            String
+  role                Role       @default(VENDEDOR)
+  isActive            Boolean    @default(true)
+  status              UserStatus @default(ACTIVE)
+  requestedRole       Role?
+  phone               String?
+  emailVerifiedAt     DateTime?
+  approvedAt          DateTime?
+  approvedById        Int?
+  rejectedAt          DateTime?
+  rejectionReason     String?
+  failedLoginAttempts Int        @default(0)
+  lockedUntil         DateTime?
+  passwordChangedAt   DateTime?
+  mustChangePassword  Boolean    @default(false)
+  twoFactorEnabled    Boolean    @default(false)
+  twoFactorVerifiedAt DateTime?
+  securityVersion     Int        @default(1)
+  lastLoginAt         DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
-  approvedBy                    User?                   @relation("UserApproval", fields: [approvedById], references: [id], onDelete: SetNull)
-  approvedUsers                 User[]                  @relation("UserApproval")
-  securityTokens                SecurityToken[]
-  authSessions                  AuthSession[]
-  twoFactorMethod               TwoFactorMethod?
-  twoFactorRecoveryCodes        TwoFactorRecoveryCode[]
-  loginAttempts                 LoginAttempt[]
-  securityAuditActions          SecurityAuditLog[]      @relation("SecurityAuditActor")
-  securityAuditTargets          SecurityAuditLog[]      @relation("SecurityAuditTarget")
-  purchases                     Purchase[]
-  sales                         Sale[]
-  payments                      Payment[]
-  reportHistories               ReportHistory[]
-  saleReturns                   SaleReturn[]
-  warehouseTransfers            WarehouseTransfer[]
-  inventoryMovements            InventoryMovement[]
-  collectionAssignments         CollectionAssignment[] @relation("CollectionAssignee")
-  collectionAssignmentsCreated  CollectionAssignment[] @relation("CollectionAssignedBy")
-  administrationActions         UserAdministrationLog[] @relation("UserAdministrationActor")
-  administrationEvents          UserAdministrationLog[] @relation("UserAdministrationTarget")
-  saleWhatsAppLogs              SaleWhatsAppLog[]
+  approvedBy                   User?                   @relation("UserApproval", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedUsers                User[]                  @relation("UserApproval")
+  securityTokens               SecurityToken[]
+  authSessions                 AuthSession[]
+  twoFactorMethod              TwoFactorMethod?
+  twoFactorRecoveryCodes       TwoFactorRecoveryCode[]
+  loginAttempts                LoginAttempt[]
+  securityAuditActions         SecurityAuditLog[]      @relation("SecurityAuditActor")
+  securityAuditTargets         SecurityAuditLog[]      @relation("SecurityAuditTarget")
+  purchases                    Purchase[]
+  sales                        Sale[]
+  payments                     Payment[]
+  reportHistories              ReportHistory[]
+  saleReturns                  SaleReturn[]
+  warehouseTransfers           WarehouseTransfer[]
+  inventoryMovements           InventoryMovement[]
+  collectionAssignments        CollectionAssignment[]  @relation("CollectionAssignee")
+  collectionAssignmentsCreated CollectionAssignment[]  @relation("CollectionAssignedBy")
+  administrationActions        UserAdministrationLog[] @relation("UserAdministrationActor")
+  administrationEvents         UserAdministrationLog[] @relation("UserAdministrationTarget")
+  saleWhatsAppLogs             SaleWhatsAppLog[]
+  economicAuditLogs            EconomicAuditLog[]
 
   @@index([status])
   @@index([lockedUntil])
@@ -307,15 +308,15 @@ model SubCategory {
 }
 
 model Product {
-  id                   String       @id @default(cuid())
+  id                   String                    @id @default(cuid())
   name                 String
   description          String?
   providerId           String
-  provider             Provider     @relation(fields: [providerId], references: [id])
+  provider             Provider                  @relation(fields: [providerId], references: [id])
   categoryId           String
-  category             Category     @relation(fields: [categoryId], references: [id])
+  category             Category                  @relation(fields: [categoryId], references: [id])
   subCategoryId        String?
-  subCategory          SubCategory? @relation(fields: [subCategoryId], references: [id])
+  subCategory          SubCategory?              @relation(fields: [subCategoryId], references: [id])
   weight               String?
   purchasePrice        Float
   priceNormal          Float
@@ -323,15 +324,15 @@ model Product {
   priceEspecial        Float
   priceMayorista       Float?
   minQuantityWholesale Int?
-  markupNormal         Float        @default(10)
-  markupCamino         Float        @default(10)
-  markupEspecial       Float        @default(10)
-  markupMayorista      Float        @default(10)
-  stock                Float        @default(0)
-  reservedStock        Float        @default(0)
-  minStock             Float        @default(0)
-  unit                 String       @default("UNIDAD")
-  reserveQuantity      Float        @default(0)
+  markupNormal         Float                     @default(10)
+  markupCamino         Float                     @default(10)
+  markupEspecial       Float                     @default(10)
+  markupMayorista      Float                     @default(10)
+  stock                Float                     @default(0)
+  reservedStock        Float                     @default(0)
+  minStock             Float                     @default(0)
+  unit                 String                    @default("UNIDAD")
+  reserveQuantity      Float                     @default(0)
   additionalInfo       String?
   imageUrl             String?
   purchaseDetails      PurchaseDetail[]
@@ -340,39 +341,45 @@ model Product {
   warehouseStocks      WarehouseStock[]
   transferDetails      WarehouseTransferDetail[]
   inventoryMovements   InventoryMovement[]
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
 }
 
 model Purchase {
-  id             String         @id @default(cuid())
-  userId         Int
-  user           User           @relation(fields: [userId], references: [id])
-  date           DateTime       @default(now())
-  status         PurchaseStatus @default(PENDING)
-  total          Float          @default(0)
-  observations   String?
-  pdfUrl         String?
-  providerGroups PurchaseProvider[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                 String             @id @default(cuid())
+  idempotencyKey     String?            @unique
+  cancelledById      Int?
+  cancellationReason String?
+  userId             Int
+  user               User               @relation(fields: [userId], references: [id])
+  date               DateTime           @default(now())
+  status             PurchaseStatus     @default(PENDING)
+  total              Float              @default(0)
+  observations       String?
+  pdfUrl             String?
+  providerGroups     PurchaseProvider[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@map("purchases")
 }
 
 model PurchaseProvider {
-  id          String                 @id @default(cuid())
-  purchaseId  String
-  purchase    Purchase               @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  providerId  String
-  provider    Provider               @relation(fields: [providerId], references: [id])
-  status      PurchaseProviderStatus @default(PENDING)
-  total       Float                  @default(0)
-  receivedAt  DateTime?
-  cancelledAt DateTime?
-  details     PurchaseDetail[]
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
+  id                 String                 @id @default(cuid())
+  receivedById       Int?
+  cancelledById      Int?
+  cancellationReason String?
+  purchaseId         String
+  purchase           Purchase               @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  providerId         String
+  provider           Provider               @relation(fields: [providerId], references: [id])
+  status             PurchaseProviderStatus @default(PENDING)
+  total              Float                  @default(0)
+  receivedAt         DateTime?
+  cancelledAt        DateTime?
+  details            PurchaseDetail[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
   @@unique([purchaseId, providerId])
   @@index([purchaseId])
@@ -420,21 +427,25 @@ enum PurchaseProviderStatus {
 }
 
 model Sale {
-  id                   String               @id @default(cuid())
-  saleNumber           String               @unique
+  id                   String                @id @default(cuid())
+  idempotencyKey       String?               @unique
+  confirmedById        Int?
+  cancelledById        Int?
+  cancellationReason   String?
+  saleNumber           String                @unique
   clientId             String
-  client               Client               @relation(fields: [clientId], references: [id])
+  client               Client                @relation(fields: [clientId], references: [id])
   userId               Int
-  user                 User                 @relation(fields: [userId], references: [id])
-  date                 DateTime             @default(now())
-  status               SaleStatus           @default(PENDING)
-  paymentStatus        PaymentStatus        @default(PENDING)
-  saleType             SaleType             @default(CASH)
+  user                 User                  @relation(fields: [userId], references: [id])
+  date                 DateTime              @default(now())
+  status               SaleStatus            @default(PENDING)
+  paymentStatus        PaymentStatus         @default(PENDING)
+  saleType             SaleType              @default(CASH)
   dueDate              DateTime?
   confirmedAt          DateTime?
   cancelledAt          DateTime?
-  subtotal             Float                @default(0)
-  discount             Float                @default(0)
+  subtotal             Float                 @default(0)
+  discount             Float                 @default(0)
   total                Float
   observations         String?
   pdfUrl               String?
@@ -444,8 +455,8 @@ model Sale {
   returns              SaleReturn[]
   collectionAssignment CollectionAssignment?
   whatsappLogs         SaleWhatsAppLog[]
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   @@index([date])
   @@index([confirmedAt])
@@ -501,15 +512,16 @@ model SaleDetail {
 }
 
 model SaleReturn {
-  id           String             @id @default(cuid())
-  saleId       String
-  sale         Sale               @relation(fields: [saleId], references: [id])
-  userId       Int
-  user         User               @relation(fields: [userId], references: [id])
-  amount       Float
-  observations String?
-  createdAt    DateTime           @default(now())
-  details      SaleReturnDetail[]
+  id             String             @id @default(cuid())
+  idempotencyKey String?            @unique
+  saleId         String
+  sale           Sale               @relation(fields: [saleId], references: [id])
+  userId         Int
+  user           User               @relation(fields: [userId], references: [id])
+  amount         Float
+  observations   String?
+  createdAt      DateTime           @default(now())
+  details        SaleReturnDetail[]
 
   @@index([saleId])
   @@index([userId])
@@ -517,13 +529,13 @@ model SaleReturn {
 }
 
 model SaleReturnDetail {
-  id           String       @id @default(cuid())
+  id           String     @id @default(cuid())
   saleReturnId String
-  saleReturn   SaleReturn   @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
+  saleReturn   SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
   saleDetailId String
-  saleDetail   SaleDetail   @relation(fields: [saleDetailId], references: [id])
+  saleDetail   SaleDetail @relation(fields: [saleDetailId], references: [id])
   productId    String
-  product      Product      @relation(fields: [productId], references: [id])
+  product      Product    @relation(fields: [productId], references: [id])
   quantity     Int
   unitPrice    Float
   subtotal     Float
@@ -552,20 +564,26 @@ enum SaleType {
 }
 
 model Payment {
-  id           String        @id @default(cuid())
-  saleId       String
-  sale         Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  clientId     String
-  client       Client        @relation(fields: [clientId], references: [id])
-  userId       Int
-  user         User          @relation(fields: [userId], references: [id])
-  amount       Float
-  method       PaymentMethod
-  reference    String?
-  receivedAt   DateTime      @default(now())
-  observations String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id                 String        @id @default(cuid())
+  idempotencyKey     String?       @unique
+  reversalOfId       String?       @unique
+  isReversal         Boolean       @default(false)
+  cancelledAt        DateTime?
+  cancelledById      Int?
+  cancellationReason String?
+  saleId             String
+  sale               Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  clientId           String
+  client             Client        @relation(fields: [clientId], references: [id])
+  userId             Int
+  user               User          @relation(fields: [userId], references: [id])
+  amount             Float
+  method             PaymentMethod
+  reference          String?
+  receivedAt         DateTime      @default(now())
+  observations       String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   @@map("payments")
 }
@@ -591,6 +609,24 @@ model CollectionAssignment {
   @@index([assignedById])
   @@index([assignedAt])
   @@map("collection_assignments")
+}
+
+model EconomicAuditLog {
+  id           String   @id @default(cuid())
+  userId       Int
+  action       String
+  entityType   String
+  entityId     String
+  operationKey String?  @unique
+  reason       String?
+  details      Json?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@map("economic_audit_logs")
 }
 
 model ReportHistory {
@@ -667,21 +703,24 @@ model PurchaseDetailWarehouse {
 }
 
 model WarehouseTransfer {
-  id                     String                  @id @default(cuid())
-  transferNumber         String                  @unique
+  id                     String                    @id @default(cuid())
+  idempotencyKey         String?                   @unique
+  cancelledById          Int?
+  cancellationReason     String?
+  transferNumber         String                    @unique
   originWarehouseId      String
   destinationWarehouseId String
   userId                 Int
-  originWarehouse        Warehouse               @relation("TransferOrigin", fields: [originWarehouseId], references: [id], onDelete: Restrict)
-  destinationWarehouse   Warehouse               @relation("TransferDestination", fields: [destinationWarehouseId], references: [id], onDelete: Restrict)
-  user                    User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
-  status                  WarehouseTransferStatus @default(COMPLETED)
-  observations            String?
-  transferredAt           DateTime                @default(now())
-  cancelledAt             DateTime?
-  details                 WarehouseTransferDetail[]
-  createdAt               DateTime                @default(now())
-  updatedAt               DateTime                @updatedAt
+  originWarehouse        Warehouse                 @relation("TransferOrigin", fields: [originWarehouseId], references: [id], onDelete: Restrict)
+  destinationWarehouse   Warehouse                 @relation("TransferDestination", fields: [destinationWarehouseId], references: [id], onDelete: Restrict)
+  user                   User                      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status                 WarehouseTransferStatus   @default(COMPLETED)
+  observations           String?
+  transferredAt          DateTime                  @default(now())
+  cancelledAt            DateTime?
+  details                WarehouseTransferDetail[]
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
 
   @@index([originWarehouseId])
   @@index([destinationWarehouseId])
