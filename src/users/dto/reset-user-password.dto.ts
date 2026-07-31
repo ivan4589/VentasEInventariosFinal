@@ -1,8 +1,9 @@
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ValidateNested } from 'class-validator';
+import { AdminStepUpDto } from '../../auth/dto/admin-step-up.dto';
 
 export class ResetUserPasswordDto {
-  @IsString()
-  @MinLength(8)
-  @MaxLength(72)
-  password: string;
+  @ValidateNested()
+  @Type(() => AdminStepUpDto)
+  confirmation: AdminStepUpDto;
 }
