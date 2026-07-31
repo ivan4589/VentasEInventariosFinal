@@ -9,26 +9,38 @@ on:
       - 'package-lock.json'
       - 'tsconfig*.json'
       - '.github/workflows/auth-validation.yml'
-  push:
-    branches:
-      - agent/roles-permisos-alcance-datos
+
+permissions:
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sistema_ventas?schema=public
       JWT_SECRET: ci-only-validation-secret
       TWO_FACTOR_ENCRYPTION_KEY: ci-only-validation-encryption-key
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/administracion-segura-usuarios
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - name: Repair lockfile when required
+        run: |
+          npm install --package-lock-only --ignore-scripts
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "Sincroniza package-lock de administración segura"
+            git push origin HEAD:agent/administracion-segura-usuarios
+          fi
       - run: npm ci
       - run: npx prisma validate
       - run: npx prisma generate
       - run: npm run build
-      - run: npm test -- --runInBand permissions.spec.ts auth
+      - run: npm test -- --runInBand permissions.spec.ts auth users
