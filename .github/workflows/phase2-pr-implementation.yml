@@ -27,6 +27,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Install current dependencies
+        run: npm ci
       - name: Apply foundation
         run: |
           python3 scripts/phase2/foundation.py
