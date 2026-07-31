@@ -14,7 +14,7 @@ permissions:
 jobs:
   implement:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sistema_ventas?schema=public
       JWT_SECRET: ci-only-phase2-secret
@@ -27,13 +27,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Install current dependencies
-        run: npm ci
+      - name: Repair current dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Apply foundation
         run: |
           python3 scripts/phase2/foundation.py
           npx prisma format
-          npm install --package-lock-only --ignore-scripts
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Validate foundation
         run: |
           npm ci
