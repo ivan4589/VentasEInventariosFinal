@@ -9,6 +9,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { $Enums } from '../../generated/prisma/client';
+import { PERMISSIONS } from '../auth/authorization/permissions';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -18,6 +20,7 @@ import { WarehouseTransfersService } from './warehouse-transfers.service';
 @Controller('warehouse-transfers')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles($Enums.Role.ADMIN)
+@Permissions(PERMISSIONS.INVENTORY_TRANSFER)
 export class WarehouseTransfersController {
   constructor(
     private readonly warehouseTransfersService: WarehouseTransfersService,

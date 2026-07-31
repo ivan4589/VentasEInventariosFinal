@@ -1,20 +1,22 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 import { $Enums } from '../../generated/prisma/client';
+import { PERMISSIONS } from '../auth/authorization/permissions';
+import { Permissions } from '../auth/decorators/permissions.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('categories')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -23,30 +25,35 @@ export class CategoriesController {
 
   @Get()
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  @Permissions(PERMISSIONS.CATALOG_VIEW)
   findAll() {
     return this.categoriesService.findAll();
   }
 
   @Get(':id')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  @Permissions(PERMISSIONS.CATALOG_VIEW)
   findOne(@Param('id') id: string) {
     return this.categoriesService.findOne(id);
   }
 
   @Post()
   @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.CATALOG_MANAGE)
   create(@Body() createCategoryDto: CreateCategoryDto) {
     return this.categoriesService.create(createCategoryDto);
   }
 
   @Patch(':id')
   @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.CATALOG_MANAGE)
   update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto) {
     return this.categoriesService.update(id, updateCategoryDto);
   }
 
   @Delete(':id')
   @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.CATALOG_MANAGE)
   remove(@Param('id') id: string) {
     return this.categoriesService.remove(id);
   }
