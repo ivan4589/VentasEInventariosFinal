@@ -32,6 +32,7 @@ jobs:
       - name: Apply critical-operation hardening
         run: |
           python3 scripts/phase2/operations.py
+          python3 scripts/phase2/fix_generated_operations.py
           npx prisma format
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Validate backend
