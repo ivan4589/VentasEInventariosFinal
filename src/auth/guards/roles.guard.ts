@@ -44,8 +44,19 @@ export class RolesGuard implements CanActivate {
     }
 
     const { user } = context.switchToHttp().getRequest<{
-      user?: { role?: $Enums.Role };
+      user?: {
+        role?: $Enums.Role;
+        mustChangePassword?: boolean;
+      };
     }>();
+
+    if (user?.mustChangePassword) {
+      throw new ForbiddenException({
+        message:
+          'Debes cambiar la contraseña temporal antes de usar los módulos del sistema',
+        code: 'PASSWORD_CHANGE_REQUIRED',
+      });
+    }
 
     const roleAllowed =
       !requiredRoles?.length ||
