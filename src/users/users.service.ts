@@ -294,7 +294,7 @@ export class UsersService {
         $Enums.UserStatus.PENDING_EMAIL_VERIFICATION,
         $Enums.UserStatus.PENDING_ADMIN_APPROVAL,
         $Enums.UserStatus.REJECTED,
-      ].includes(currentUser.status)
+      ].some((value) => value === currentUser.status)
     ) {
       throw new BadRequestException(
         'Esta cuenta debe gestionarse desde Solicitudes de acceso',
@@ -640,7 +640,7 @@ export class UsersService {
         $Enums.UserStatus.PENDING_EMAIL_VERIFICATION,
         $Enums.UserStatus.PENDING_ADMIN_APPROVAL,
         $Enums.UserStatus.REJECTED,
-      ].includes(status)
+      ].some((value) => value === status)
     ) {
       throw new BadRequestException(
         'Esta cuenta debe gestionarse desde Solicitudes de acceso',
