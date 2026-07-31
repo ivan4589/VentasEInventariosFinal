@@ -148,7 +148,10 @@ export class SalesController {
     await this.dataScope.assertCanManageSale(id, req.user);
     return this.integrity.run({
       operationKey,
-      locks: [`sale:${id}`, ...(dto.details || []).map((d) => `stock:${d.productId}`)],
+      locks: [
+        `sale:${id}`,
+        ...(dto.details || []).map((detail) => `stock:${detail.productId}`),
+      ],
       userId: req.user.id,
       action: 'SALE_UPDATED',
       entityType: 'SALE',
@@ -169,7 +172,11 @@ export class SalesController {
     @Request() req: any,
   ) {
     await this.dataScope.assertCanManageSale(id, req.user);
-    return this.whatsappService.sendSaleDocument(id, req.user.id, dto.resend ?? false);
+    return this.whatsappService.sendSaleDocument(
+      id,
+      req.user.id,
+      dto.resend ?? false,
+    );
   }
 
   @Post(':id/returns')
@@ -182,7 +189,10 @@ export class SalesController {
     @Headers('idempotency-key') operationKey?: string,
   ) {
     await this.dataScope.assertCanManageSale(id, req.user);
-    const reason = this.integrity.reason(dto.observations, 'registrar la devolución');
+    const reason = this.integrity.reason(
+      dto.observations,
+      'registrar la devolución',
+    );
     return this.integrity.run({
       operationKey,
       locks: [`sale:${id}`],
@@ -191,17 +201,25 @@ export class SalesController {
       entityType: 'SALE_RETURN',
       reason,
       execute: async (key) => {
-        const value = await this.salesService.createReturn(id, dto, req.user.id, key);
+        const value = await this.salesService.createReturn(
+          id,
+          dto,
+          req.user.id,
+          key,
+        );
         return {
           entityId: value.return.id,
           value,
           details: { saleId: id, amount: value.return.amount },
         };
       },
-      resolveExisting: async () => {
-        const sale = await this.salesService.findOne(id);
-        return { message: 'La devolución ya había sido registrada', sale } as any;
-      },
+      resolveExisting: () =>
+        this.salesService.createReturn(
+          id,
+          dto,
+          req.user.id,
+          this.integrity.operationKey(operationKey),
+        ),
     });
   }
 
@@ -224,7 +242,11 @@ export class SalesController {
       reason,
       execute: async () => {
         const value = await this.salesService.cancel(id, req.user.id, reason);
-        return { entityId: id, value, details: { saleNumber: value.saleNumber } };
+        return {
+          entityId: id,
+          value,
+          details: { saleNumber: value.saleNumber },
+        };
       },
       resolveExisting: () => this.salesService.findOne(id),
     });
