@@ -1,0 +1,121 @@
+name: Finalize secure user administration
+
+on:
+  push:
+    branches:
+      - agent/administracion-segura-usuarios
+    paths:
+      - '.github/workflows/finalize-secure-user-admin.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sistema_ventas?schema=public
+      JWT_SECRET: ci-only-user-admin-secret
+      TWO_FACTOR_ENCRYPTION_KEY: ci-only-user-admin-encryption-key-32chars
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/administracion-segura-usuarios
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply authentication integration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(path: str, old: str, new: str):
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'No se encontró bloque en {path}: {old[:100]!r}')
+              file.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          auth = Path('src/auth/auth.service.ts')
+          text = auth.read_text(encoding='utf-8')
+          text = text.replace(
+              '  securityVersion: number;\n};',
+              '  securityVersion: number;\n  mustChangePassword: boolean;\n};',
+              1,
+          )
+          text = text.replace(
+              '            "securityVersion" = "securityVersion" + 1,\n            "failedLoginAttempts" = 0, "lockedUntil" = NULL, "updatedAt" = NOW()',
+              '            "securityVersion" = "securityVersion" + 1,\n            "mustChangePassword" = false,\n            "failedLoginAttempts" = 0, "lockedUntil" = NULL, "updatedAt" = NOW()',
+              1,
+          )
+          text = text.replace(
+              '        securityVersion: user.securityVersion,\n      },',
+              '        securityVersion: user.securityVersion,\n        mustChangePassword: user.mustChangePassword,\n      },',
+              1,
+          )
+          text = text.replace(
+              '      twoFactorEnabled: user.twoFactorEnabled,\n    };',
+              '      twoFactorEnabled: user.twoFactorEnabled,\n      mustChangePassword: user.mustChangePassword,\n    };',
+              1,
+          )
+          pattern = re.compile(
+              r"  async resetTwoFactorByAdmin\(userId: number, administratorId: number\) \{.*?\n  \}\n\n  private async createSession",
+              re.S,
+          )
+          replacement = '''  async resetTwoFactorByAdmin(_userId: number, _administratorId: number) {
+    throw new BadRequestException(
+      'Utiliza el módulo Administración de usuarios para restablecer el segundo factor con confirmación reforzada',
+    );
+  }
+
+  private async createSession'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('No se pudo deshabilitar el endpoint heredado de 2FA')
+          auth.write_text(text, encoding='utf-8')
+
+          completion = Path('src/auth/auth-security-completion.service.ts')
+          text = completion.read_text(encoding='utf-8')
+          text = text.replace(
+              '        lastLoginAt: Date | null;\n      }>',
+              '        lastLoginAt: Date | null;\n        mustChangePassword: boolean;\n      }>',
+              1,
+          )
+          text = text.replace(
+              '             "twoFactorEnabled", "emailVerifiedAt", "lastLoginAt"\n',
+              '             "twoFactorEnabled", "emailVerifiedAt", "lastLoginAt",\n             "mustChangePassword"\n',
+              1,
+          )
+          text = text.replace(
+              '            "passwordChangedAt" = NOW(),\n            "securityVersion" = "securityVersion" + 1,',
+              '            "passwordChangedAt" = NOW(),\n            "mustChangePassword" = false,\n            "securityVersion" = "securityVersion" + 1,',
+              1,
+          )
+          completion.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate backend
+        id: validate
+        continue-on-error: true
+        run: |
+          npm ci
+          npx prisma validate
+          npx prisma generate
+          npm run build
+          npm test -- --runInBand permissions.spec.ts auth users
+      - name: Record and commit
+        shell: bash
+        run: |
+          {
+            echo "SECURE_USER_ADMIN_BACKEND=${{ steps.validate.outcome }}"
+            echo "Validated at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > .github/secure-user-admin-backend.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/auth .github/secure-user-admin-backend.txt
+          git commit -m "Integra contraseña temporal con autenticación"
+          git push origin HEAD:agent/administracion-segura-usuarios
+          test "${{ steps.validate.outcome }}" = "success"
