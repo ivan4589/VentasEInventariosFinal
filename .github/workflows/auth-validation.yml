@@ -1,24 +1,26 @@
-name: Backend authentication validation
+name: Backend validation
 
 on:
   pull_request:
     paths:
-      - 'src/auth/**'
-      - 'src/users/**'
+      - 'src/**'
       - 'prisma/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'tsconfig*.json'
       - '.github/workflows/auth-validation.yml'
   push:
     branches:
-      - agent/cierre-autenticacion-segura
+      - agent/roles-permisos-alcance-datos
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sistema_ventas?schema=public
+      JWT_SECRET: ci-only-validation-secret
+      TWO_FACTOR_ENCRYPTION_KEY: ci-only-validation-encryption-key
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,4 +31,4 @@ jobs:
       - run: npx prisma validate
       - run: npx prisma generate
       - run: npm run build
-      - run: npm test -- --runInBand auth
+      - run: npm test -- --runInBand permissions.spec.ts auth
