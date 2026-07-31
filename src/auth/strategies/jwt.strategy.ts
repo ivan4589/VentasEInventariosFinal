@@ -36,9 +36,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         isActive: boolean;
         status: string;
         securityVersion: number;
+        mustChangePassword: boolean;
       }>
     >`
-      SELECT "id", "name", "email", "role", "isActive", "status", "securityVersion"
+      SELECT "id", "name", "email", "role", "isActive", "status",
+             "securityVersion", "mustChangePassword"
       FROM "User" WHERE "id" = ${payload.sub} LIMIT 1
     `;
     const user = rows[0];

@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AdminStepUpService } from './admin-step-up.service';
 import { DataScopeService } from './authorization/data-scope.service';
 import { AuthController } from './auth.controller';
 import { AuthSecurityCompletionService } from './auth-security-completion.service';
@@ -38,12 +39,18 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     AuthSecurityCompletionService,
     AuthRateLimitGuard,
     DataScopeService,
+    AdminStepUpService,
     {
       provide: AuthService,
       useClass: EmailAuthService,
     },
     JwtStrategy,
   ],
-  exports: [AuthService, AuthSecurityCompletionService, DataScopeService],
+  exports: [
+    AuthService,
+    AuthSecurityCompletionService,
+    DataScopeService,
+    AdminStepUpService,
+  ],
 })
 export class AuthModule {}
