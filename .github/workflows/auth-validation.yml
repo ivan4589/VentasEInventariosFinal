@@ -29,30 +29,82 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Correct status validations and lockfile
+      - name: Complete authentication integration
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('src/users/users.service.ts')
-          text = path.read_text(encoding='utf-8')
-          text = text.replace(
-              '].includes(currentUser.status)',
-              '].some((value) => value === currentUser.status)',
-              1,
+          import re
+
+          auth = Path('src/auth/auth.service.ts')
+          text = auth.read_text(encoding='utf-8')
+          if '  mustChangePassword: boolean;' not in text:
+              text = text.replace(
+                  '  securityVersion: number;\n};',
+                  '  securityVersion: number;\n  mustChangePassword: boolean;\n};',
+                  1,
+              )
+          reset_old = '            "securityVersion" = "securityVersion" + 1,\n            "failedLoginAttempts" = 0, "lockedUntil" = NULL, "updatedAt" = NOW()'
+          reset_new = '            "securityVersion" = "securityVersion" + 1,\n            "mustChangePassword" = false,\n            "failedLoginAttempts" = 0, "lockedUntil" = NULL, "updatedAt" = NOW()'
+          if reset_new not in text:
+              text = text.replace(reset_old, reset_new, 1)
+          jwt_old = '        securityVersion: user.securityVersion,\n      },'
+          jwt_new = '        securityVersion: user.securityVersion,\n        mustChangePassword: user.mustChangePassword,\n      },'
+          if jwt_new not in text:
+              text = text.replace(jwt_old, jwt_new, 1)
+          public_old = '      twoFactorEnabled: user.twoFactorEnabled,\n    };'
+          public_new = '      twoFactorEnabled: user.twoFactorEnabled,\n      mustChangePassword: user.mustChangePassword,\n    };'
+          if public_new not in text:
+              text = text.replace(public_old, public_new, 1)
+          if 'Utiliza el módulo Administración de usuarios para restablecer el segundo factor' not in text:
+              pattern = re.compile(
+                  r"  async resetTwoFactorByAdmin\(userId: number, administratorId: number\) \{.*?\n  \}\n\n  private async createSession",
+                  re.S,
+              )
+              replacement = '''  async resetTwoFactorByAdmin(_userId: number, _administratorId: number) {
+    throw new BadRequestException(
+      'Utiliza el módulo Administración de usuarios para restablecer el segundo factor con confirmación reforzada',
+    );
+  }
+
+  private async createSession'''
+              text, count = pattern.subn(replacement, text, count=1)
+              if count != 1:
+                  raise SystemExit('No se pudo deshabilitar el método heredado de 2FA')
+          auth.write_text(text, encoding='utf-8')
+
+          completion = Path('src/auth/auth-security-completion.service.ts')
+          text = completion.read_text(encoding='utf-8')
+          if '        mustChangePassword: boolean;' not in text:
+              text = text.replace(
+                  '        lastLoginAt: Date | null;\n      }>',
+                  '        lastLoginAt: Date | null;\n        mustChangePassword: boolean;\n      }>',
+                  1,
+              )
+          select_old = '             "twoFactorEnabled", "emailVerifiedAt", "lastLoginAt"\n'
+          select_new = '             "twoFactorEnabled", "emailVerifiedAt", "lastLoginAt",\n             "mustChangePassword"\n'
+          if select_new not in text:
+              text = text.replace(select_old, select_new, 1)
+          change_old = '            "passwordChangedAt" = NOW(),\n            "securityVersion" = "securityVersion" + 1,'
+          change_new = '            "passwordChangedAt" = NOW(),\n            "mustChangePassword" = false,\n            "securityVersion" = "securityVersion" + 1,'
+          if change_new not in text:
+              text = text.replace(change_old, change_new, 1)
+          completion.write_text(text, encoding='utf-8')
+
+          controller = Path('src/auth/auth.controller.ts')
+          text = controller.read_text(encoding='utf-8')
+          pattern = re.compile(
+              r"\n  @Post\('admin/users/:id/reset-2fa'\)\n  @UseGuards\(JwtAuthGuard, RolesGuard\)\n  @Roles\(\$Enums\.Role\.ADMIN\)\n  resetTwoFactor\(\n    @Param\('id', ParseIntPipe\) id: number,\n    @Req\(\) request: any,\n  \) \{\n    return this\.authService\.resetTwoFactorByAdmin\(id, request\.user\.id\);\n  \}\n",
+              re.S,
           )
-          text = text.replace(
-              '].includes(status)',
-              '].some((value) => value === status)',
-              1,
-          )
-          path.write_text(text, encoding='utf-8')
+          text = pattern.sub('', text, count=1)
+          controller.write_text(text, encoding='utf-8')
           PY
           npm install --package-lock-only --ignore-scripts
-          if ! git diff --quiet -- src/users/users.service.ts package-lock.json; then
+          if ! git diff --quiet -- src/auth package-lock.json; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/users/users.service.ts package-lock.json
-            git commit -m "Corrige validación de estados de usuario"
+            git add src/auth package-lock.json
+            git commit -m "Integra contraseña temporal con autenticación"
             git push origin HEAD:agent/administracion-segura-usuarios
           fi
       - run: npm ci
