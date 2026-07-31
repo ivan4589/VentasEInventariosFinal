@@ -41,13 +41,29 @@ jobs:
           npx prisma validate
           npx prisma generate
           npm run build
-          npm test -- --runInBand economic-integrity payments warehouse-transfers sales purchases collections inventory
-      - name: Commit validated implementation
+          npm test -- --runInBand \
+            src/economic-integrity/economic-integrity.spec.ts \
+            src/payments/payments.service.spec.ts \
+            src/warehouse-transfers/warehouse-transfers.service.spec.ts \
+            src/sales/sales.service.spec.ts \
+            src/sales/whatsapp.service.spec.ts \
+            src/purchases/purchases.service.spec.ts \
+            src/collections/collections.service.spec.ts \
+            src/inventory/inventory.service.spec.ts
+          npm audit --omit=dev || true
+      - name: Commit validated implementation and remove temporary tooling
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src prisma package-lock.json
           if ! git diff --cached --quiet; then
             git commit -m "Completa integridad económica de operaciones críticas"
-            git push origin HEAD:agent/seguridad-integridad-economica-v1
           fi
+          git rm -f \
+            .github/workflows/phase2-foundation.yml \
+            .github/workflows/phase2-pr-implementation.yml \
+            scripts/phase2/foundation.py \
+            scripts/phase2/operations.py \
+            scripts/phase2/fix_generated_operations.py
+          git commit -m "Retira utilidades temporales de la fase 2"
+          git push origin HEAD:agent/seguridad-integridad-economica-v1
