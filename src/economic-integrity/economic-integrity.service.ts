@@ -52,6 +52,7 @@ export class EconomicIntegrityService implements OnModuleDestroy {
     resolveExisting: (entityId: string) => Promise<T>;
   }): Promise<T> {
     const operationKey = this.operationKey(options.operationKey);
+    const pendingEntityId = `PENDING:${operationKey}`;
 
     return this.withLocks(
       [`operation:${operationKey}`, ...options.locks],
@@ -61,28 +62,46 @@ export class EconomicIntegrityService implements OnModuleDestroy {
         });
 
         if (existing) {
-          if (
-            existing.action !== options.action ||
-            existing.entityType !== options.entityType
-          ) {
-            throw new ConflictException(
-              'La clave de idempotencia ya fue utilizada para otra operación',
-            );
-          }
-          return options.resolveExisting(existing.entityId);
+          // Nunca devolvemos ni volvemos a ejecutar una operación usando una
+          // clave ya registrada. Esto impide que otro actor reutilice la clave
+          // para consultar datos ajenos o que una solicitud distinta modifique
+          // nuevamente una entidad económica.
+          throw new ConflictException(
+            existing.entityId.startsWith('PENDING:')
+              ? 'La operación ya fue recibida y su resultado debe verificarse antes de reintentar'
+              : 'La operación ya fue procesada. Actualiza la información antes de continuar',
+          );
         }
 
-        const executed = await options.execute(operationKey);
-
+        // La reserva se confirma antes de modificar ventas, pagos o stock. Si
+        // el proceso se interrumpe después de que la mutación se confirmó, la
+        // reserva permanece y el reintento falla de forma segura, evitando una
+        // segunda aplicación del mismo movimiento.
         await this.prisma.economicAuditLog.create({
           data: {
             userId: options.userId,
             action: options.action,
             entityType: options.entityType,
-            entityId: executed.entityId,
+            entityId: pendingEntityId,
             operationKey,
             reason: options.reason || null,
-            details: executed.details || undefined,
+            details: {
+              status: 'PENDING',
+              locks: [...new Set(options.locks)].sort(),
+            },
+          },
+        });
+
+        const executed = await options.execute(operationKey);
+
+        await this.prisma.economicAuditLog.update({
+          where: { operationKey },
+          data: {
+            entityId: executed.entityId,
+            details: {
+              status: 'COMPLETED',
+              result: executed.details || null,
+            },
           },
         });
 
