@@ -35,7 +35,6 @@ jobs:
         run: |
           python <<'PY'
           from pathlib import Path
-          import textwrap
 
           target = Path('src/data-protection/data-protection.module.ts')
           if target.exists():
@@ -46,7 +45,11 @@ jobs:
               marker_end = "\n          PY\n"
               start = workflow.index(marker_start) + len(marker_start)
               end = workflow.index(marker_end, start)
-              script = textwrap.dedent(workflow[start:end])
+              raw_script = workflow[start:end]
+              script = '\n'.join(
+                  line[10:] if line.startswith('          ') else line
+                  for line in raw_script.splitlines()
+              )
               exec(compile(script, 'phase3_implementation.py', 'exec'))
           PY
       - run: npm ci
