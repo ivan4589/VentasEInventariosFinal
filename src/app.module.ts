@@ -20,6 +20,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { CollectionsModule } from './collections/collections.module';
 import { WarehouseTransfersModule } from './warehouse-transfers/warehouse-transfers.module';
+import { EconomicIntegrityModule } from './economic-integrity/economic-integrity.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { WarehouseTransfersModule } from './warehouse-transfers/warehouse-transf
       isGlobal: true,
     }),
     PrismaModule,
+    EconomicIntegrityModule,
     AuthModule,
     UsersModule,
     LocationsModule,

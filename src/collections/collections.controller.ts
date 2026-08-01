@@ -1,9 +1,9 @@
 import {
   Body,
   Controller,
-  Delete,
   ForbiddenException,
   Get,
+  Headers,
   Param,
   ParseIntPipe,
   Patch,
@@ -22,6 +22,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CollectionsService } from './collections.service';
+import { CancelEconomicOperationDto } from '../economic-integrity/dto/cancel-economic-operation.dto';
+import { EconomicIntegrityService } from '../economic-integrity/economic-integrity.service';
 import { AssignCollectionDto } from './dto/assign-collection.dto';
 
 @Controller('collections')
@@ -30,6 +32,7 @@ export class CollectionsController {
   constructor(
     private readonly collectionsService: CollectionsService,
     private readonly dataScope: DataScopeService,
+    private readonly integrity: EconomicIntegrityService,
   ) {}
 
   @Get('debts')
@@ -103,15 +106,54 @@ export class CollectionsController {
     @Param('saleId') saleId: string,
     @Body() dto: AssignCollectionDto,
     @Request() req: any,
+    @Headers('idempotency-key') operationKey?: string,
   ) {
-    return this.collectionsService.assign(saleId, dto.assignedToId, req.user);
+    return this.integrity.run({
+      operationKey,
+      locks: [`sale:${saleId}`],
+      userId: req.user.id,
+      action: 'COLLECTION_ASSIGNED',
+      entityType: 'SALE',
+      execute: async () => {
+        const value = await this.collectionsService.assign(
+          saleId,
+          dto.assignedToId,
+          req.user,
+        );
+        return {
+          entityId: saleId,
+          value,
+          details: { assignedToId: dto.assignedToId },
+        };
+      },
+      resolveExisting: () =>
+        this.collectionsService.assign(saleId, dto.assignedToId, req.user),
+    });
   }
 
-  @Delete('sales/:saleId/assignment')
+  @Patch('sales/:saleId/assignment/remove')
   @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.COLLECTIONS_ASSIGN)
-  unassign(@Param('saleId') saleId: string, @Request() req: any) {
-    return this.collectionsService.unassign(saleId, req.user);
+  unassign(
+    @Param('saleId') saleId: string,
+    @Body() dto: CancelEconomicOperationDto,
+    @Request() req: any,
+    @Headers('idempotency-key') operationKey?: string,
+  ) {
+    const reason = this.integrity.reason(dto.reason, 'quitar la asignación');
+    return this.integrity.run({
+      operationKey,
+      locks: [`sale:${saleId}`],
+      userId: req.user.id,
+      action: 'COLLECTION_UNASSIGNED',
+      entityType: 'SALE',
+      reason,
+      execute: async () => {
+        const value = await this.collectionsService.unassign(saleId, req.user);
+        return { entityId: saleId, value, details: { saleId } };
+      },
+      resolveExisting: async () => ({ message: 'La asignación ya fue eliminada' }),
+    });
   }
 
   @Post('reports/general-pdf')

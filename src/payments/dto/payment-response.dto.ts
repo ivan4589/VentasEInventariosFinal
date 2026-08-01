@@ -11,6 +11,10 @@ export class PaymentResponseDto {
   method: $Enums.PaymentMethod;
   reference?: string;
   observations?: string;
+  isReversal: boolean;
+  reversalOfId?: string | null;
+  cancelledAt?: Date | null;
+  cancellationReason?: string | null;
   receivedAt: Date;
   createdAt: Date;
   updatedAt: Date;

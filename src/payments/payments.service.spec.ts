@@ -17,7 +17,10 @@ describe('PaymentsService', () => {
       update: jest.fn(),
     },
     payment: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
     $transaction: jest.fn(),
   };
@@ -29,6 +32,8 @@ describe('PaymentsService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    prisma.payment.findUnique.mockResolvedValue(null);
+    prisma.payment.findFirst.mockResolvedValue(null);
     prisma.$transaction.mockImplementation(
       async (callback) => callback(prisma),
     );
@@ -101,6 +106,7 @@ describe('PaymentsService', () => {
             id: 7,
             role: $Enums.Role.COBRADOR,
           },
+          'payment-test-key-001',
         ),
       ).resolves.toEqual(
         expect.objectContaining({
