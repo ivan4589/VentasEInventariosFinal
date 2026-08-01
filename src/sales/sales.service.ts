@@ -436,10 +436,9 @@ export class SalesService {
             detail.quantity,
           );
 
-        const unitPrice =
-          detail.unitPrice > 0
-            ? detail.unitPrice
-            : automaticPrice;
+        // El precio siempre se obtiene del catálogo del servidor.
+        // El valor enviado por la interfaz nunca es una fuente confiable.
+        const unitPrice = automaticPrice;
 
         return {
           productId: product.id,
@@ -465,7 +464,13 @@ export class SalesService {
     createSaleDto: CreateSaleDto,
     userId: number,
     userRole: $Enums.Role,
+    operationKey: string,
   ): Promise<SaleResponseDto> {
+    const existing = await this.prisma.sale.findUnique({
+      where: { idempotencyKey: operationKey },
+      select: { id: true },
+    });
+    if (existing) return this.findOne(existing.id);
     const {
       clientId,
       details,
@@ -575,6 +580,7 @@ export class SalesService {
           await prisma.sale.create({
             data: {
               saleNumber,
+              idempotencyKey: operationKey,
               clientId,
               userId,
               saleType,
@@ -661,10 +667,10 @@ export class SalesService {
           );
         }
 
-        if (
-          sale.status !==
-          $Enums.SaleStatus.PENDING
-        ) {
+        if (sale.status === $Enums.SaleStatus.CONFIRMED) {
+          return;
+        }
+        if (sale.status !== $Enums.SaleStatus.PENDING) {
           throw new BadRequestException(
             'Solo se pueden confirmar ventas pendientes',
           );
@@ -760,6 +766,7 @@ export class SalesService {
             status:
               $Enums.SaleStatus.CONFIRMED,
             confirmedAt: new Date(),
+            confirmedById: userId,
           },
         });
       },
@@ -1016,6 +1023,7 @@ export class SalesService {
   async cancel(
     id: string,
     userId: number,
+    reason: string,
   ): Promise<SaleResponseDto> {
     const sale =
       await this.prisma.sale.findUnique({
@@ -1037,12 +1045,14 @@ export class SalesService {
       );
     }
 
-    if (
-      sale.status ===
-      $Enums.SaleStatus.CANCELLED
-    ) {
+    if (sale.status === $Enums.SaleStatus.CANCELLED) {
+      return this.findOne(id);
+    }
+
+    const netPaid = await this.getPaidAmount(id);
+    if (netPaid > 0) {
       throw new BadRequestException(
-        'La venta ya está anulada',
+        'Debes anular o revertir todos los pagos antes de anular la venta',
       );
     }
 
@@ -1179,6 +1189,8 @@ export class SalesService {
             status:
               $Enums.SaleStatus.CANCELLED,
             cancelledAt: new Date(),
+            cancelledById: userId,
+            cancellationReason: reason,
           },
         });
       },
@@ -1217,7 +1229,19 @@ export class SalesService {
     saleId: string,
     dto: CreateSaleReturnDto,
     userId: number,
+    operationKey: string,
   ) {
+    const existing = await this.prisma.saleReturn.findUnique({
+      where: { idempotencyKey: operationKey },
+      select: { id: true, saleId: true, amount: true },
+    });
+    if (existing) {
+      return {
+        message: 'La devolución ya había sido registrada',
+        return: existing,
+        sale: await this.findOne(existing.saleId),
+      };
+    }
     const saleDetailIds = dto.details.map(
       (detail) => detail.saleDetailId,
     );
@@ -1323,6 +1347,7 @@ export class SalesService {
               data: {
                 saleId,
                 userId,
+                idempotencyKey: operationKey,
                 amount:
                   this.roundMoney(returnTotal),
                 observations:
@@ -1450,6 +1475,12 @@ export class SalesService {
               saleId,
               prisma,
             );
+
+          if (paidAmount > newTotal) {
+            throw new BadRequestException(
+              'La devolución dejaría la venta con un total menor al monto pagado. Revierte primero el excedente',
+            );
+          }
 
           await prisma.sale.update({
             where: {

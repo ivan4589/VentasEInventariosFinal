@@ -25,6 +25,7 @@ function createBasePrisma() {
     },
     warehouseTransfer: {
       create: jest.fn().mockResolvedValue({ id: 'transfer_1' }),
+      findFirst: jest.fn().mockResolvedValue(null),
       findUnique: jest.fn(),
       findMany: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -213,7 +214,7 @@ describe('WarehouseTransfersService', () => {
     });
 
     const service = new WarehouseTransfersService(prisma);
-    const result = await service.cancel('transfer_1', 1);
+    const result = await service.cancel('transfer_1', 1, 'Motivo válido para anular');
 
     expect(result).toBe(cancelledTransfer);
     expect(prisma.warehouseTransfer.updateMany).toHaveBeenCalledWith(
@@ -264,7 +265,7 @@ describe('WarehouseTransfersService', () => {
 
     const service = new WarehouseTransfersService(prisma);
 
-    await expect(service.cancel('transfer_1', 1)).rejects.toThrow(
+    await expect(service.cancel('transfer_1', 1, 'Motivo válido para anular')).rejects.toThrow(
       'No se puede anular',
     );
 

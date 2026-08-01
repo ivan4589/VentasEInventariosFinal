@@ -48,6 +48,7 @@ describe('PurchasesService', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       purchase: {
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockImplementation(({ data }) => ({
           id: 'purchase-1',
           ...data,

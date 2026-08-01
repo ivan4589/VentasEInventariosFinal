@@ -647,7 +647,13 @@ export class PurchasesService {
   async create(
     createPurchaseDto: CreatePurchaseDto,
     userId: number,
+    operationKey: string,
   ): Promise<PurchaseResponseDto> {
+    const existing = await this.prisma.purchase.findFirst({
+      where: { idempotencyKey: operationKey },
+      select: { id: true },
+    });
+    if (existing) return this.findOne(existing.id);
     const groups = await this.prepareProviderGroups(createPurchaseDto.details);
 
     const total = this.roundMoney(
@@ -657,6 +663,7 @@ export class PurchasesService {
     const purchase = await this.prisma.purchase.create({
       data: {
         userId,
+        idempotencyKey: operationKey,
         observations: createPurchaseDto.observations,
         total,
         providerGroups: {
@@ -805,6 +812,14 @@ export class PurchasesService {
     purchaseProviderId: string,
     userId: number,
   ): Promise<PurchaseResponseDto> {
+    const existingStatus = await this.prisma.purchaseProvider.findFirst({
+      where: { id: purchaseProviderId, purchaseId },
+      select: { status: true },
+    });
+    if (existingStatus?.status === $Enums.PurchaseProviderStatus.RECEIVED) {
+      return this.findOne(purchaseId);
+    }
+
     const status = await this.prisma.$transaction(async (prisma) => {
       const group = await prisma.purchaseProvider.findFirst({
         where: {
@@ -949,7 +964,10 @@ export class PurchasesService {
         data: {
           status: $Enums.PurchaseProviderStatus.RECEIVED,
           receivedAt: new Date(),
+          receivedById: userId,
           cancelledAt: null,
+          cancelledById: null,
+          cancellationReason: null,
         },
       });
 
@@ -965,6 +983,7 @@ export class PurchasesService {
     purchaseId: string,
     purchaseProviderId: string,
     userId: number,
+    reason: string,
   ): Promise<PurchaseResponseDto> {
     const status = await this.prisma.$transaction(async (prisma) => {
       const group = await prisma.purchaseProvider.findFirst({
@@ -991,7 +1010,7 @@ export class PurchasesService {
       }
 
       if (group.status === $Enums.PurchaseProviderStatus.CANCELLED) {
-        throw new BadRequestException('El proveedor ya estÃ¡ anulado');
+        return this.synchronizePurchase(prisma, purchaseId);
       }
 
       if (group.status === $Enums.PurchaseProviderStatus.RECEIVED) {
@@ -1043,6 +1062,8 @@ export class PurchasesService {
         data: {
           status: $Enums.PurchaseProviderStatus.CANCELLED,
           cancelledAt: new Date(),
+          cancelledById: userId,
+          cancellationReason: reason,
         },
       });
 
@@ -1067,7 +1088,18 @@ export class PurchasesService {
     return this.findOne(purchaseId);
   }
 
-  async cancel(id: string, userId: number): Promise<PurchaseResponseDto> {
+  async cancel(
+    id: string,
+    userId: number,
+    reason: string,
+  ): Promise<PurchaseResponseDto> {
+    const existing = await this.prisma.purchase.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (existing?.status === $Enums.PurchaseStatus.CANCELLED) {
+      return this.findOne(id);
+    }
     await this.prisma.$transaction(async (prisma) => {
       const purchase = await prisma.purchase.findUnique({
         where: {
@@ -1150,6 +1182,8 @@ export class PurchasesService {
         data: {
           status: $Enums.PurchaseProviderStatus.CANCELLED,
           cancelledAt: new Date(),
+          cancelledById: userId,
+          cancellationReason: reason,
         },
       });
 
@@ -1172,6 +1206,8 @@ export class PurchasesService {
           status: $Enums.PurchaseStatus.CANCELLED,
           total: 0,
           pdfUrl: null,
+          cancelledById: userId,
+          cancellationReason: reason,
         },
       });
     });
