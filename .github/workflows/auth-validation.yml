@@ -71,9 +71,7 @@ jobs:
           from pathlib import Path
 
           target = Path('src/reports/report-range.ts')
-          if target.exists():
-              print('Phase 3 reports protection already applied')
-          else:
+          if not target.exists():
               workflow = Path('.github/workflows/phase3-reports-implementation.yml').read_text(encoding='utf-8')
               start_marker = '# PYTHON_BEGIN\n'
               end_marker = '\n# PYTHON_END'
@@ -88,8 +86,21 @@ jobs:
                       script_lines.append('')
                   else:
                       script_lines.append(line)
-              script = '\n'.join(script_lines)
-              exec(compile(script, 'phase3_reports.py', 'exec'))
+              exec(compile('\n'.join(script_lines), 'phase3_reports.py', 'exec'))
+
+          reports_path = Path('src/reports/reports.service.ts')
+          reports = reports_path.read_text(encoding='utf-8')
+          reports = reports.replace('\n#  async getSalesByDate', '\n  async getSalesByDate')
+          reports_path.write_text(reports, encoding='utf-8')
+
+          analytics_path = Path('src/reports/analytics-reports.service.ts')
+          analytics = analytics_path.read_text(encoding='utf-8')
+          analytics = analytics.replace(
+              '): Promise<{ pdfUrl: string }> {',
+              '): Promise<{ pdfUrl: string; historyId: string }> {',
+              2,
+          )
+          analytics_path.write_text(analytics, encoding='utf-8')
           PY
       - run: npm ci
       - run: npx prisma validate
