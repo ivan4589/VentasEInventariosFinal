@@ -51,6 +51,20 @@ jobs:
                   for line in raw_script.splitlines()
               )
               exec(compile(script, 'phase3_implementation.py', 'exec'))
+
+          sales_path = Path('src/sales/sales.service.ts')
+          sales = sales_path.read_text(encoding='utf-8')
+          sales = sales.replace(
+              "this.prisma.client.findFirst({\n        where: { id: clientId, isActive: true },\n      })",
+              "this.prisma.client.findUnique({\n        where: { id: clientId },\n      })",
+              1,
+          )
+          sales = sales.replace(
+              "    if (!client) {\n      throw new NotFoundException(\n        'Cliente no encontrado o desactivado',",
+              "    if (!client || client.isActive === false) {\n      throw new NotFoundException(\n        'Cliente no encontrado o desactivado',",
+              1,
+          )
+          sales_path.write_text(sales, encoding='utf-8')
           PY
       - run: npm ci
       - run: npx prisma validate
