@@ -221,7 +221,7 @@ export class PurchasesService {
     });
 
     if (products.length !== productIds.length) {
-      throw new BadRequestException('Uno o mÃ¡s productos no existen');
+      throw new BadRequestException('Uno o más productos no existen o están desactivados');
     }
 
     const productMap = new Map(

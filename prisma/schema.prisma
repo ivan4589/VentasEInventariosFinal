@@ -114,6 +114,7 @@ model User {
   administrationEvents         UserAdministrationLog[] @relation("UserAdministrationTarget")
   saleWhatsAppLogs             SaleWhatsAppLog[]
   economicAuditLogs            EconomicAuditLog[]
+  dataAuditLogs                DataAuditLog[]
 
   @@index([status])
   @@index([lockedUntil])
@@ -253,13 +254,19 @@ model Client {
   locationId      String
   location        Location   @relation(fields: [locationId], references: [id])
   phone           String?
+  phoneNormalized String?
   whatsappConsent Boolean    @default(false)
   additionalInfo  String?
+  isActive        Boolean    @default(true)
+  deletedAt       DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   sales           Sale[]
   payments        Payment[]
 
+  @@index([phoneNormalized])
+  @@index([isActive])
+  @@index([locationId, isActive])
   @@map("clients")
 }
 
@@ -270,16 +277,23 @@ enum ClientType {
 }
 
 model Provider {
-  id             String             @id @default(cuid())
-  companyName    String             @unique
-  contactName    String?
-  phone          String?
-  email          String?
-  products       Product[]
-  purchaseGroups PurchaseProvider[]
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  id                    String             @id @default(cuid())
+  companyName           String
+  companyNameNormalized String
+  contactName           String?
+  phone                 String?
+  phoneNormalized       String?
+  email                 String?
+  isActive              Boolean            @default(true)
+  deletedAt             DateTime?
+  products              Product[]
+  purchaseGroups        PurchaseProvider[]
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
+  @@index([phoneNormalized])
+  @@index([companyNameNormalized])
+  @@index([isActive])
   @@map("providers")
 }
 
@@ -310,6 +324,7 @@ model SubCategory {
 model Product {
   id                   String                    @id @default(cuid())
   name                 String
+  nameNormalized       String
   description          String?
   providerId           String
   provider             Provider                  @relation(fields: [providerId], references: [id])
@@ -335,6 +350,8 @@ model Product {
   reserveQuantity      Float                     @default(0)
   additionalInfo       String?
   imageUrl             String?
+  isActive             Boolean                   @default(true)
+  deletedAt            DateTime?
   purchaseDetails      PurchaseDetail[]
   saleDetails          SaleDetail[]
   saleReturnDetails    SaleReturnDetail[]
@@ -343,6 +360,11 @@ model Product {
   inventoryMovements   InventoryMovement[]
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
+
+  @@index([nameNormalized])
+  @@index([isActive])
+  @@index([providerId, isActive])
+  @@index([categoryId, isActive])
 }
 
 model Purchase {
@@ -627,6 +649,24 @@ model EconomicAuditLog {
   @@index([entityType, entityId])
   @@index([action, createdAt])
   @@map("economic_audit_logs")
+}
+
+model DataAuditLog {
+  id         String   @id @default(cuid())
+  userId     Int
+  action     String
+  entityType String
+  entityId   String
+  reason     String?
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@map("data_audit_logs")
 }
 
 model ReportHistory {

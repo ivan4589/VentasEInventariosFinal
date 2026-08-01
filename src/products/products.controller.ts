@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   Patch,
@@ -25,6 +24,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { UpdatePurchasePriceDto } from './dto/update-purchase-price.dto';
+import { CancelEconomicOperationDto } from '../economic-integrity/dto/cancel-economic-operation.dto';
 import { ProductsService } from './products.service';
 
 const productImagesDir = join(process.cwd(), 'uploads', 'products');
@@ -48,6 +49,7 @@ export class ProductsController {
     @Query('search') search?: string,
     @Query('categoryId') categoryId?: string,
     @Query('providerId') providerId?: string,
+    @Query('includeInactive') includeInactive?: string,
   ) {
     const products = search
       ? await this.productsService.searchByName(search)
@@ -55,7 +57,9 @@ export class ProductsController {
         ? await this.productsService.findByCategory(categoryId)
         : providerId
           ? await this.productsService.findByProvider(providerId)
-          : await this.productsService.findAll();
+          : await this.productsService.findAll(
+              req.user.role === $Enums.Role.ADMIN && includeInactive === 'true',
+            );
     return products.map((product) => this.toRoleView(product, req.user.role));
   }
 
@@ -63,7 +67,10 @@ export class ProductsController {
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   @Permissions(PERMISSIONS.PRODUCTS_VIEW)
   async findOne(@Param('id') id: string, @Request() req: any) {
-    const product = await this.productsService.findOne(id);
+    const product = await this.productsService.findOne(
+      id,
+      req.user.role === $Enums.Role.ADMIN,
+    );
     return this.toRoleView(product, req.user.role);
   }
 
@@ -115,22 +122,41 @@ export class ProductsController {
   @Post()
   @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.PRODUCTS_MANAGE)
-  create(@Body() createProductDto: CreateProductDto) {
-    return this.productsService.create(createProductDto);
+  create(@Body() createProductDto: CreateProductDto, @Request() req: any) {
+    return this.productsService.create(createProductDto, req.user.id);
   }
 
   @Patch(':id')
   @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.PRODUCTS_MANAGE)
-  update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
-    return this.productsService.update(id, updateProductDto);
+  update(
+    @Param('id') id: string,
+    @Body() updateProductDto: UpdateProductDto,
+    @Request() req: any,
+  ) {
+    return this.productsService.update(id, updateProductDto, req.user.id);
   }
 
-  @Delete(':id')
+  @Patch(':id/deactivate')
   @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.PRODUCTS_MANAGE)
-  remove(@Param('id') id: string) {
-    return this.productsService.remove(id);
+  deactivate(
+    @Param('id') id: string,
+    @Body() dto: CancelEconomicOperationDto,
+    @Request() req: any,
+  ) {
+    return this.productsService.remove(id, req.user.id, dto.reason);
+  }
+
+  @Patch(':id/reactivate')
+  @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.PRODUCTS_MANAGE)
+  reactivate(
+    @Param('id') id: string,
+    @Body() dto: CancelEconomicOperationDto,
+    @Request() req: any,
+  ) {
+    return this.productsService.reactivate(id, req.user.id, dto.reason);
   }
 
   @Patch(':id/purchase-price')
@@ -138,9 +164,15 @@ export class ProductsController {
   @Permissions(PERMISSIONS.PRODUCTS_VIEW_COSTS, PERMISSIONS.PRODUCTS_MANAGE)
   updatePurchasePrice(
     @Param('id') id: string,
-    @Body('purchasePrice') purchasePrice: number,
+    @Body() dto: UpdatePurchasePriceDto,
+    @Request() req: any,
   ) {
-    return this.productsService.updatePurchasePrice(id, purchasePrice);
+    return this.productsService.updatePurchasePrice(
+      id,
+      dto.purchasePrice,
+      req.user.id,
+      dto.reason,
+    );
   }
 
   private toRoleView(product: any, role: $Enums.Role) {

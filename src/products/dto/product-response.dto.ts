@@ -21,6 +21,8 @@ export class ProductResponseDto {
   reserveQuantity: number;
   additionalInfo?: string;
   imageUrl?: string;
+  isActive: boolean;
+  deletedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

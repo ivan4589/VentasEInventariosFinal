@@ -44,8 +44,9 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.useStaticAssets(join(process.cwd(), 'uploads'), {
-    prefix: '/uploads/',
+  app.useStaticAssets(join(process.cwd(), 'uploads', 'products'), {
+    prefix: '/uploads/products/',
+    fallthrough: false,
   });
 
   app.useGlobalPipes(
