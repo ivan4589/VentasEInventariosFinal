@@ -10,6 +10,7 @@ on:
       - 'tsconfig*.json'
       - '.github/workflows/auth-validation.yml'
       - '.github/workflows/phase3-data-protection-implementation.yml'
+      - '.github/workflows/phase3-reports-implementation.yml'
 
 permissions:
   contents: write
@@ -31,15 +32,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Apply Phase 3 implementation once
+      - name: Apply Phase 3 foundation once
         run: |
           python <<'PY'
           from pathlib import Path
 
           target = Path('src/data-protection/data-protection.module.ts')
-          if target.exists():
-              print('Phase 3 foundation already applied')
-          else:
+          if not target.exists():
               workflow = Path('.github/workflows/phase3-data-protection-implementation.yml').read_text(encoding='utf-8')
               marker_start = "          python <<'PY'\n"
               marker_end = "\n          PY\n"
@@ -66,11 +65,37 @@ jobs:
           )
           sales_path.write_text(sales, encoding='utf-8')
           PY
+      - name: Apply Phase 3 reports protection once
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          target = Path('src/reports/report-range.ts')
+          if target.exists():
+              print('Phase 3 reports protection already applied')
+          else:
+              workflow = Path('.github/workflows/phase3-reports-implementation.yml').read_text(encoding='utf-8')
+              start_marker = '# PYTHON_BEGIN\n'
+              end_marker = '\n# PYTHON_END'
+              start = workflow.index(start_marker) + len(start_marker)
+              end = workflow.index(end_marker, start)
+              raw = workflow[start:end]
+              script_lines = []
+              for line in raw.splitlines():
+                  if line.startswith('# '):
+                      script_lines.append(line[2:])
+                  elif line == '#':
+                      script_lines.append('')
+                  else:
+                      script_lines.append(line)
+              script = '\n'.join(script_lines)
+              exec(compile(script, 'phase3_reports.py', 'exec'))
+          PY
       - run: npm ci
       - run: npx prisma validate
       - run: npx prisma generate
       - run: npm run build
-      - name: Run security and economic integrity tests
+      - name: Run security, reports and economic integrity tests
         run: |
           npm test -- --runInBand \
             src/auth/authorization/permissions.spec.ts \
@@ -78,6 +103,7 @@ jobs:
             src/auth/auth.service.spec.ts \
             src/auth/auth.controller.spec.ts \
             src/economic-integrity/economic-integrity.spec.ts \
+            src/reports/report-range.spec.ts \
             src/payments/payments.service.spec.ts \
             src/warehouse-transfers/warehouse-transfers.service.spec.ts \
             src/sales/sales.service.spec.ts \
@@ -87,7 +113,7 @@ jobs:
             src/inventory/inventory.service.spec.ts
       - name: Production dependency audit
         run: npm audit --omit=dev || true
-      - name: Commit Phase 3 foundation
+      - name: Commit Phase 3 implementation
         run: |
           if git diff --quiet && git diff --cached --quiet; then
             echo "No implementation changes to commit"
@@ -96,5 +122,5 @@ jobs:
           git config user.name "chatgpt-codex-connector[bot]"
           git config user.email "199175422+chatgpt-codex-connector[bot]@users.noreply.github.com"
           git add prisma src
-          git commit -m "Implementa protección base de datos y documentos en Fase 3"
+          git commit -m "Protege reportes y enlaces de documentos en Fase 3"
           git push origin HEAD:${{ github.head_ref }}
