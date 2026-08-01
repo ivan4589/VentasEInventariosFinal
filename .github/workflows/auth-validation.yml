@@ -9,99 +9,24 @@ on:
       - 'package-lock.json'
       - 'tsconfig*.json'
       - '.github/workflows/auth-validation.yml'
-      - '.github/workflows/phase3-data-protection-implementation.yml'
-      - '.github/workflows/phase3-reports-implementation.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sistema_ventas?schema=public
       JWT_SECRET: ci-only-validation-secret
       TWO_FACTOR_ENCRYPTION_KEY: ci-only-validation-key-32-bytes!!
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Apply Phase 3 foundation once
-        run: |
-          python <<'PY'
-          from pathlib import Path
-
-          target = Path('src/data-protection/data-protection.module.ts')
-          if not target.exists():
-              workflow = Path('.github/workflows/phase3-data-protection-implementation.yml').read_text(encoding='utf-8')
-              marker_start = "          python <<'PY'\n"
-              marker_end = "\n          PY\n"
-              start = workflow.index(marker_start) + len(marker_start)
-              end = workflow.index(marker_end, start)
-              raw_script = workflow[start:end]
-              script = '\n'.join(
-                  line[10:] if line.startswith('          ') else line
-                  for line in raw_script.splitlines()
-              )
-              exec(compile(script, 'phase3_implementation.py', 'exec'))
-
-          sales_path = Path('src/sales/sales.service.ts')
-          sales = sales_path.read_text(encoding='utf-8')
-          sales = sales.replace(
-              "this.prisma.client.findFirst({\n        where: { id: clientId, isActive: true },\n      })",
-              "this.prisma.client.findUnique({\n        where: { id: clientId },\n      })",
-              1,
-          )
-          sales = sales.replace(
-              "    if (!client) {\n      throw new NotFoundException(\n        'Cliente no encontrado o desactivado',",
-              "    if (!client || client.isActive === false) {\n      throw new NotFoundException(\n        'Cliente no encontrado o desactivado',",
-              1,
-          )
-          sales_path.write_text(sales, encoding='utf-8')
-          PY
-      - name: Apply Phase 3 reports protection once
-        run: |
-          python <<'PY'
-          from pathlib import Path
-
-          target = Path('src/reports/report-range.ts')
-          if not target.exists():
-              workflow = Path('.github/workflows/phase3-reports-implementation.yml').read_text(encoding='utf-8')
-              start_marker = '# PYTHON_BEGIN\n'
-              end_marker = '\n# PYTHON_END'
-              start = workflow.index(start_marker) + len(start_marker)
-              end = workflow.index(end_marker, start)
-              raw = workflow[start:end]
-              script_lines = []
-              for line in raw.splitlines():
-                  if line.startswith('# '):
-                      script_lines.append(line[2:])
-                  elif line == '#':
-                      script_lines.append('')
-                  else:
-                      script_lines.append(line)
-              exec(compile('\n'.join(script_lines), 'phase3_reports.py', 'exec'))
-
-          reports_path = Path('src/reports/reports.service.ts')
-          reports = reports_path.read_text(encoding='utf-8')
-          reports = reports.replace('\n#  async getSalesByDate', '\n  async getSalesByDate')
-          reports_path.write_text(reports, encoding='utf-8')
-
-          analytics_path = Path('src/reports/analytics-reports.service.ts')
-          analytics = analytics_path.read_text(encoding='utf-8')
-          analytics = analytics.replace(
-              '): Promise<{ pdfUrl: string }> {',
-              '): Promise<{ pdfUrl: string; historyId: string }> {',
-              2,
-          )
-          analytics_path.write_text(analytics, encoding='utf-8')
-          PY
       - run: npm ci
       - run: npx prisma validate
       - run: npx prisma generate
@@ -122,16 +47,11 @@ jobs:
             src/purchases/purchases.service.spec.ts \
             src/collections/collections.service.spec.ts \
             src/inventory/inventory.service.spec.ts
+      - name: Reject public sensitive document directories
+        run: |
+          if grep -R -nE "prefix: '/uploads/(reports|sales|purchases)" src; then
+            echo "Sensitive documents must be served by authenticated endpoints."
+            exit 1
+          fi
       - name: Production dependency audit
         run: npm audit --omit=dev || true
-      - name: Commit Phase 3 implementation
-        run: |
-          if git diff --quiet && git diff --cached --quiet; then
-            echo "No implementation changes to commit"
-            exit 0
-          fi
-          git config user.name "chatgpt-codex-connector[bot]"
-          git config user.email "199175422+chatgpt-codex-connector[bot]@users.noreply.github.com"
-          git add prisma src
-          git commit -m "Protege reportes y enlaces de documentos en Fase 3"
-          git push origin HEAD:${{ github.head_ref }}
