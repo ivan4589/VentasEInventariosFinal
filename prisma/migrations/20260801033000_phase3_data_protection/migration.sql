@@ -115,3 +115,5 @@ CREATE INDEX IF NOT EXISTS "data_audit_logs_entityType_entityId_idx"
   ON "data_audit_logs"("entityType", "entityId");
 CREATE INDEX IF NOT EXISTS "data_audit_logs_action_createdAt_idx"
   ON "data_audit_logs"("action", "createdAt");
+
+ALTER TYPE "ReportType" ADD VALUE IF NOT EXISTS 'ANALYTICS_REPORT';

@@ -687,6 +687,7 @@ enum ReportType {
   INVENTORY_DETAILED
   SALES_REPORT
   COLLECTION_REPORT
+  ANALYTICS_REPORT
 }
 
 model Warehouse {

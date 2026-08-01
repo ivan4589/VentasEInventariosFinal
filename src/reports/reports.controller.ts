@@ -22,6 +22,7 @@ import { ReportFiltersDto } from './dto/report-filters.dto';
 import { AnalyticsReportsService } from './analytics-reports.service';
 import { ReportHistoryService } from './report-history.service';
 import { ReportsService } from './reports.service';
+import { assertReportRange } from './report-range';
 
 interface AuthenticatedRequest {
   user: {
@@ -100,21 +101,25 @@ export class ReportsController {
   @Get('inventory')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   @Permissions(PERMISSIONS.REPORTS_INVENTORY)
-  getInventory() {
-    return this.reportsService.getInventoryGeneral();
+  getInventory(@Request() req: AuthenticatedRequest) {
+    return this.reportsService.getInventoryGeneral(req.user.role);
   }
 
   @Post('inventory/pdf')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
   @Permissions(PERMISSIONS.REPORTS_INVENTORY)
   generateInventoryPDF(@Request() req: AuthenticatedRequest) {
-    return this.reportsService.generateInventoryPDF(req.user.id);
+    return this.reportsService.generateInventoryPDF(
+      req.user.id,
+      req.user.role,
+    );
   }
 
   @Get('sales')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   @Permissions(PERMISSIONS.REPORTS_SALES_ALL)
   getSales(@Query() filters: ReportFiltersDto) {
+    assertReportRange(filters.dateFrom, filters.dateTo, { required: true });
     return this.reportsService.getSalesByDate(filters);
   }
 
@@ -125,6 +130,7 @@ export class ReportsController {
     @Query() filters: ReportFiltersDto,
     @Request() req: AuthenticatedRequest,
   ) {
+    assertReportRange(filters.dateFrom, filters.dateTo, { required: true });
     return this.reportsService.generateSalesPDF(filters, req.user.id);
   }
 
@@ -132,6 +138,7 @@ export class ReportsController {
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
   @Permissions(PERMISSIONS.REPORTS_SALES_ALL)
   getSalesSummary(@Query() filters: ReportFiltersDto) {
+    assertReportRange(filters.dateFrom, filters.dateTo, { required: true });
     return this.reportsService.getSalesSummary(filters);
   }
 
@@ -142,6 +149,7 @@ export class ReportsController {
     @Query() filters: ReportFiltersDto,
     @Request() req: AuthenticatedRequest,
   ) {
+    assertReportRange(filters.dateFrom, filters.dateTo, { required: true });
     return this.reportsService.generateSalesSummaryPDF(filters, req.user.id);
   }
 
@@ -149,6 +157,7 @@ export class ReportsController {
   @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.REPORTS_COLLECTIONS_ALL)
   getCollection(@Query() filters: ReportFiltersDto) {
+    assertReportRange(filters.dateFrom, filters.dateTo, { required: true });
     return this.reportsService.getCollectionReport(filters);
   }
 
@@ -159,6 +168,7 @@ export class ReportsController {
     @Query() filters: ReportFiltersDto,
     @Request() req: AuthenticatedRequest,
   ) {
+    assertReportRange(filters.dateFrom, filters.dateTo, { required: true });
     return this.reportsService.generateCollectionPDF(filters, req.user.id);
   }
 
@@ -172,6 +182,7 @@ export class ReportsController {
     @Query() filters: ReportFiltersDto,
     @Request() req: AuthenticatedRequest,
   ) {
+    assertReportRange(filters.dateFrom, filters.dateTo);
     return this.reportHistoryService.findAll({
       type: filters.type,
       dateFrom: filters.dateFrom ? new Date(filters.dateFrom) : undefined,

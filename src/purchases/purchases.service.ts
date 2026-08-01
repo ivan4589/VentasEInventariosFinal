@@ -144,7 +144,9 @@ export class PurchasesService {
       status: purchase.status,
       total: purchase.total,
       observations: purchase.observations,
-      pdfUrl: purchase.pdfUrl,
+      pdfUrl: purchase.pdfUrl
+        ? `/api/documents/purchases/${purchase.id}`
+        : undefined,
       providerGroups: (purchase.providerGroups || [])
         .sort((a: any, b: any) =>
           a.provider.companyName.localeCompare(b.provider.companyName),

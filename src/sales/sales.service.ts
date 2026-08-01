@@ -261,8 +261,10 @@ export class SalesService {
       ),
 
       observations: sale.observations,
-      pdfUrl: sale.pdfUrl,
-      cancelledPdfUrl: sale.cancelledPdfUrl,
+      pdfUrl: sale.pdfUrl ? `/api/documents/sales/${sale.id}` : undefined,
+      cancelledPdfUrl: sale.cancelledPdfUrl
+        ? `/api/documents/sales/${sale.id}?cancelled=true`
+        : undefined,
       whatsappLastSentAt:
         lastSuccessfulWhatsAppLog?.createdAt,
       whatsappMessageId:

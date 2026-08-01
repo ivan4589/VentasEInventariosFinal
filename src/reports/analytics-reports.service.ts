@@ -7,6 +7,8 @@ import {
 import { $Enums, Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnalyticsReportFiltersDto } from './dto/analytics-report-filters.dto';
+import { ReportHistoryService } from './report-history.service';
+import { assertReportRange } from './report-range';
 import {
   ANALYTICS_REPORT_KEYS,
   AnalyticsReportCatalogItem,
@@ -150,7 +152,10 @@ const CATALOG: AnalyticsReportCatalogItem[] = [
 
 @Injectable()
 export class AnalyticsReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly reportHistoryService: ReportHistoryService,
+  ) {}
 
   getCatalog(role: $Enums.Role): AnalyticsReportCatalogItem[] {
     return CATALOG.filter(
@@ -164,6 +169,10 @@ export class AnalyticsReportsService {
     actor: ReportActor,
   ): Promise<AnalyticsReportDocument> {
     const reportKey = this.validateAccess(key, actor.role);
+    const catalogItem = CATALOG.find((item) => item.key === reportKey)!;
+    assertReportRange(filters.dateFrom, filters.dateTo, {
+      required: catalogItem.requiresDateRange,
+    });
 
     switch (reportKey) {
       case 'inventory-valuation':
@@ -199,7 +208,7 @@ export class AnalyticsReportsService {
     key: string,
     filters: AnalyticsReportFiltersDto,
     actor: ReportActor,
-  ): Promise<{ pdfUrl: string }> {
+  ): Promise<{ pdfUrl: string; historyId: string }> {
     const report = await this.getReport(key, filters, actor);
     const html = this.buildReportHtml(report);
     const pdfUrl = await this.writePdf(
@@ -207,13 +216,24 @@ export class AnalyticsReportsService {
       `${report.key}-${new Date().toISOString().slice(0, 10)}`,
     );
 
-    return { pdfUrl };
+    const history = await this.reportHistoryService.create({
+      type: $Enums.ReportType.ANALYTICS_REPORT,
+      title: report.title,
+      filters: { reportKey: key, ...filters },
+      pdfUrl,
+      userId: actor.id,
+    });
+
+    return {
+      pdfUrl: `/api/documents/reports/${history.id}`,
+      historyId: history.id,
+    };
   }
 
   async generateSalesMatrixPdf(
     filters: AnalyticsReportFiltersDto,
     actor: ReportActor,
-  ): Promise<{ pdfUrl: string }> {
+  ): Promise<{ pdfUrl: string; historyId: string }> {
     this.validateAccess('sales-detail', actor.role);
     const matrix = await this.salesMatrix(filters);
     const html = this.buildSalesMatrixHtml(matrix);
@@ -222,7 +242,18 @@ export class AnalyticsReportsService {
       `ventas-matriz-${new Date().toISOString().slice(0, 10)}`,
     );
 
-    return { pdfUrl };
+    const history = await this.reportHistoryService.create({
+      type: $Enums.ReportType.SALES_REPORT,
+      title: 'Matriz de ventas',
+      filters,
+      pdfUrl,
+      userId: actor.id,
+    });
+
+    return {
+      pdfUrl: `/api/documents/reports/${history.id}`,
+      historyId: history.id,
+    };
   }
 
   private validateAccess(key: string, role: $Enums.Role): AnalyticsReportKey {
@@ -320,6 +351,7 @@ export class AnalyticsReportsService {
       where: {
         stock: { gt: 0 },
         warehouse: { isActive: true },
+        product: { isActive: true, provider: { isActive: true } },
       },
       include: {
         warehouse: true,
