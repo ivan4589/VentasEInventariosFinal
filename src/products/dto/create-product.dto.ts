@@ -4,12 +4,14 @@ import {
   IsOptional,
   IsString,
   Min,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateProductDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(180)
   name: string;
 
   @IsOptional()

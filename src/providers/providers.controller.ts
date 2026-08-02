@@ -1,11 +1,12 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   Patch,
   Post,
+  Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { $Enums } from '../../generated/prisma/client';
@@ -14,50 +15,62 @@ import { Permissions } from '../auth/decorators/permissions.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { CancelEconomicOperationDto } from '../economic-integrity/dto/cancel-economic-operation.dto';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { ProvidersService } from './providers.service';
 
 @Controller('providers')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Roles($Enums.Role.ADMIN)
 export class ProvidersController {
   constructor(private readonly providersService: ProvidersService) {}
 
   @Get()
-  @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.PROVIDERS_VIEW)
-  findAll() {
-    return this.providersService.findAll();
+  findAll(@Query('includeInactive') includeInactive?: string) {
+    return this.providersService.findAll(includeInactive === 'true');
   }
 
   @Get(':id')
-  @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.PROVIDERS_VIEW)
   findOne(@Param('id') id: string) {
-    return this.providersService.findOne(id);
+    return this.providersService.findOne(id, true);
   }
 
   @Post()
-  @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.PROVIDERS_MANAGE)
-  create(@Body() createProviderDto: CreateProviderDto) {
-    return this.providersService.create(createProviderDto);
+  create(@Body() dto: CreateProviderDto, @Request() req: any) {
+    return this.providersService.create(dto, req.user.id);
   }
 
   @Patch(':id')
-  @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.PROVIDERS_MANAGE)
   update(
     @Param('id') id: string,
-    @Body() updateProviderDto: UpdateProviderDto,
+    @Body() dto: UpdateProviderDto,
+    @Request() req: any,
   ) {
-    return this.providersService.update(id, updateProviderDto);
+    return this.providersService.update(id, dto, req.user.id);
   }
 
-  @Delete(':id')
-  @Roles($Enums.Role.ADMIN)
+  @Patch(':id/deactivate')
   @Permissions(PERMISSIONS.PROVIDERS_MANAGE)
-  remove(@Param('id') id: string) {
-    return this.providersService.remove(id);
+  deactivate(
+    @Param('id') id: string,
+    @Body() dto: CancelEconomicOperationDto,
+    @Request() req: any,
+  ) {
+    return this.providersService.deactivate(id, req.user.id, dto.reason);
+  }
+
+  @Patch(':id/reactivate')
+  @Permissions(PERMISSIONS.PROVIDERS_MANAGE)
+  reactivate(
+    @Param('id') id: string,
+    @Body() dto: CancelEconomicOperationDto,
+    @Request() req: any,
+  ) {
+    return this.providersService.reactivate(id, req.user.id, dto.reason);
   }
 }

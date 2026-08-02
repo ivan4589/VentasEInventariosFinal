@@ -21,6 +21,7 @@ import { WarehousesModule } from './warehouses/warehouses.module';
 import { CollectionsModule } from './collections/collections.module';
 import { WarehouseTransfersModule } from './warehouse-transfers/warehouse-transfers.module';
 import { EconomicIntegrityModule } from './economic-integrity/economic-integrity.module';
+import { DataProtectionModule } from './data-protection/data-protection.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { EconomicIntegrityModule } from './economic-integrity/economic-integrity
     }),
     PrismaModule,
     EconomicIntegrityModule,
+    DataProtectionModule,
     AuthModule,
     UsersModule,
     LocationsModule,

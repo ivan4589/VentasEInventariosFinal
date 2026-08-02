@@ -261,8 +261,10 @@ export class SalesService {
       ),
 
       observations: sale.observations,
-      pdfUrl: sale.pdfUrl,
-      cancelledPdfUrl: sale.cancelledPdfUrl,
+      pdfUrl: sale.pdfUrl ? `/api/documents/sales/${sale.id}` : undefined,
+      cancelledPdfUrl: sale.cancelledPdfUrl
+        ? `/api/documents/sales/${sale.id}?cancelled=true`
+        : undefined,
       whatsappLastSentAt:
         lastSuccessfulWhatsAppLog?.createdAt,
       whatsappMessageId:
@@ -324,29 +326,27 @@ export class SalesService {
 
     const [client, products, centralWarehouse] = await Promise.all([
       this.prisma.client.findUnique({
-        where: {
-          id: clientId,
-        },
+        where: { id: clientId },
       }),
       this.prisma.product.findMany({
         where: {
-          id: {
-            in: productIds,
-          },
+          id: { in: productIds },
+          isActive: true,
+          provider: { isActive: true },
         },
       }),
       this.getCentralWarehouse(),
     ]);
 
-    if (!client) {
+    if (!client || client.isActive === false) {
       throw new NotFoundException(
-        'Cliente no encontrado',
+        'Cliente no encontrado o desactivado',
       );
     }
 
     if (products.length !== productIds.length) {
       throw new BadRequestException(
-        'Uno o más productos no existen',
+        'Uno o más productos no existen o están desactivados',
       );
     }
 

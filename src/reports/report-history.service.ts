@@ -21,8 +21,16 @@ interface FindReportHistoryFilters {
 export class ReportHistoryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private toResponse(history: any) {
+    const { fileUrl: _internalFileUrl, ...safe } = history;
+    return {
+      ...safe,
+      pdfUrl: `/api/documents/reports/${history.id}`,
+    };
+  }
+
   async create(data: CreateReportHistoryInput) {
-    return this.prisma.reportHistory.create({
+    const history = await this.prisma.reportHistory.create({
       data: {
         type: data.type,
         title: data.title,
@@ -36,21 +44,20 @@ export class ReportHistoryService {
         },
       },
     });
+    return this.toResponse(history);
   }
 
   async findAll(filters?: FindReportHistoryFilters) {
     const where: any = {};
-
     if (filters?.type) where.type = filters.type;
     if (filters?.userId) where.userId = filters.userId;
-
     if (filters?.dateFrom || filters?.dateTo) {
       where.createdAt = {};
       if (filters.dateFrom) where.createdAt.gte = filters.dateFrom;
       if (filters.dateTo) where.createdAt.lte = filters.dateTo;
     }
 
-    return this.prisma.reportHistory.findMany({
+    const histories = await this.prisma.reportHistory.findMany({
       where,
       include: {
         user: {
@@ -58,7 +65,9 @@ export class ReportHistoryService {
         },
       },
       orderBy: { createdAt: 'desc' },
+      take: 500,
     });
+    return histories.map((history) => this.toResponse(history));
   }
 
   async findOne(id: string, userId?: number) {
@@ -73,11 +82,9 @@ export class ReportHistoryService {
         },
       },
     });
-
     if (!history) {
       throw new NotFoundException('Historial de reporte no encontrado');
     }
-
-    return history;
+    return this.toResponse(history);
   }
 }

@@ -31,7 +31,7 @@ jobs:
       - run: npx prisma validate
       - run: npx prisma generate
       - run: npm run build
-      - name: Run security and economic integrity tests
+      - name: Run security, reports and economic integrity tests
         run: |
           npm test -- --runInBand \
             src/auth/authorization/permissions.spec.ts \
@@ -39,6 +39,7 @@ jobs:
             src/auth/auth.service.spec.ts \
             src/auth/auth.controller.spec.ts \
             src/economic-integrity/economic-integrity.spec.ts \
+            src/reports/report-range.spec.ts \
             src/payments/payments.service.spec.ts \
             src/warehouse-transfers/warehouse-transfers.service.spec.ts \
             src/sales/sales.service.spec.ts \
@@ -46,5 +47,10 @@ jobs:
             src/purchases/purchases.service.spec.ts \
             src/collections/collections.service.spec.ts \
             src/inventory/inventory.service.spec.ts
-      - name: Production dependency audit
-        run: npm audit --omit=dev || true
+      - name: Reject public sensitive document directories
+        run: |
+          if grep -R -nE "prefix: '/uploads/(reports|sales|purchases)" src; then
+            echo "Sensitive documents must be served by authenticated endpoints."
+            exit 1
+          fi
+      - run: npm audit --omit=dev --audit-level=moderate
