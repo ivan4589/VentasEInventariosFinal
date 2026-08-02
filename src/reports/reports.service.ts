@@ -384,42 +384,57 @@ export class ReportsService {
     return this.generatePDF(html, fileName, 'sales');
   }
 
-  async getInventoryGeneral() {
+  async getInventoryGeneral(
+    role: $Enums.Role = $Enums.Role.ADMIN,
+  ) {
+    const canViewCosts = role === $Enums.Role.ADMIN;
     const products = await this.prisma.product.findMany({
+      where: {
+        isActive: true,
+        provider: { isActive: true },
+      },
       include: {
         category: true,
         provider: true,
       },
       orderBy: [
-        {
-          category: {
-            name: 'asc',
-          },
-        },
-        {
-          name: 'asc',
-        },
+        { category: { name: 'asc' } },
+        { name: 'asc' },
       ],
     });
 
-    const items = products.map((product) => ({
-      productId: product.id,
-      name: product.name,
-      category: product.category?.name || 'Sin categoría',
-      provider: product.provider?.companyName || '-',
-      stock: product.stock,
-      minStock: product.minStock,
-      unit: product.unit,
-      purchasePrice: product.purchasePrice,
-      totalValue: product.stock * product.purchasePrice,
-      isLowStock: product.stock <= product.minStock && product.minStock > 0,
-    }));
+    const items = products.map((product) => {
+      const base = {
+        productId: product.id,
+        name: product.name,
+        category: product.category?.name || 'Sin categoría',
+        provider: product.provider?.companyName || '-',
+        stock: product.stock,
+        minStock: product.minStock,
+        unit: product.unit,
+        isLowStock: product.stock <= product.minStock && product.minStock > 0,
+      };
+      return canViewCosts
+        ? {
+            ...base,
+            purchasePrice: product.purchasePrice,
+            totalValue: product.stock * product.purchasePrice,
+          }
+        : base;
+    });
 
     return {
       items,
       totalProducts: items.length,
       totalStock: items.reduce((sum, item) => sum + item.stock, 0),
-      totalValue: items.reduce((sum, item) => sum + item.totalValue, 0),
+      ...(canViewCosts
+        ? {
+            totalValue: items.reduce(
+              (sum, item: any) => sum + Number(item.totalValue || 0),
+              0,
+            ),
+          }
+        : {}),
       lowStockProducts: items.filter((item) => item.isLowStock).length,
       generatedAt: new Date(),
     };
@@ -427,21 +442,26 @@ export class ReportsService {
 
   async generateInventoryPDF(
     userId: number,
+    role: $Enums.Role,
   ): Promise<{ pdfUrl: string; historyId: string }> {
-    const data = await this.getInventoryGeneral();
-
+    const data = await this.getInventoryGeneral(role);
+    const canViewCosts = role === $Enums.Role.ADMIN;
     let rows = '';
 
-    for (const item of data.items) {
+    for (const item of data.items as any[]) {
       rows += `
         <tr style="${item.isLowStock ? 'background:#fff3cd;' : ''}">
-          <td>${item.name}</td>
-          <td>${item.category}</td>
-          <td>${item.provider}</td>
+          <td>${this.escapeHtml(item.name)}</td>
+          <td>${this.escapeHtml(item.category)}</td>
+          <td>${this.escapeHtml(item.provider)}</td>
           <td style="text-align:center;">${item.stock}</td>
-          <td style="text-align:center;">${item.unit}</td>
-          <td style="text-align:right;">${item.purchasePrice.toFixed(2)}</td>
-          <td style="text-align:right;">${item.totalValue.toFixed(2)}</td>
+          <td style="text-align:center;">${this.escapeHtml(item.unit)}</td>
+          ${
+            canViewCosts
+              ? `<td style="text-align:right;">${item.purchasePrice.toFixed(2)}</td>
+                 <td style="text-align:right;">${item.totalValue.toFixed(2)}</td>`
+              : ''
+          }
         </tr>
       `;
     }
@@ -452,7 +472,11 @@ export class ReportsService {
         <p><strong>Total productos:</strong> ${data.totalProducts}</p>
         <p><strong>Stock total:</strong> ${data.totalStock}</p>
         <p><strong>Productos con stock bajo:</strong> ${data.lowStockProducts}</p>
-        <p><strong>Valor total:</strong> ${data.totalValue.toFixed(2)} Bs.</p>
+        ${
+          canViewCosts
+            ? `<p><strong>Valor total:</strong> ${Number((data as any).totalValue).toFixed(2)} Bs.</p>`
+            : ''
+        }
       `,
       `
         <table>
@@ -463,8 +487,7 @@ export class ReportsService {
               <th>Proveedor</th>
               <th>Stock</th>
               <th>Unidad</th>
-              <th>Costo</th>
-              <th>Valor</th>
+              ${canViewCosts ? '<th>Costo</th><th>Valor</th>' : ''}
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -472,22 +495,20 @@ export class ReportsService {
       `,
     );
 
-    const pdfUrl = await this.generatePDF(
+    const internalPdfUrl = await this.generatePDF(
       html,
       `inventario-general-${new Date().toISOString().slice(0, 10)}`,
       'reports',
     );
-
     const history = await this.reportHistoryService.create({
       type: $Enums.ReportType.INVENTORY_GENERAL,
       title: 'Inventario General',
-      filters: {},
-      pdfUrl,
+      filters: { includeCosts: canViewCosts },
+      pdfUrl: internalPdfUrl,
       userId,
     });
-
     return {
-      pdfUrl,
+      pdfUrl: `/api/documents/reports/${history.id}`,
       historyId: history.id,
     };
   }
@@ -625,7 +646,7 @@ export class ReportsService {
     });
 
     return {
-      pdfUrl,
+      pdfUrl: `/api/documents/reports/${history.id}`,
       historyId: history.id,
     };
   }
@@ -716,7 +737,7 @@ export class ReportsService {
     });
 
     return {
-      pdfUrl,
+      pdfUrl: `/api/documents/reports/${history.id}`,
       historyId: history.id,
     };
   }
@@ -835,7 +856,7 @@ export class ReportsService {
     });
 
     return {
-      pdfUrl,
+      pdfUrl: `/api/documents/reports/${history.id}`,
       historyId: history.id,
     };
   }

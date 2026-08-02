@@ -5,13 +5,18 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { DataAuditService } from '../data-protection/data-audit.service';
+import { normalizeDisplayText, normalizeSearchText, requireChangeReason } from '../data-protection/data-normalization';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: DataAuditService,
+  ) {}
 
   private toResponse(product: any): ProductResponseDto {
     const {
@@ -59,16 +64,18 @@ export class ProductsService {
     };
   }
 
-  async findAll(): Promise<ProductResponseDto[]> {
+  async findAll(includeInactive = false): Promise<ProductResponseDto[]> {
     const products = await this.prisma.product.findMany({
+      where: includeInactive ? undefined : { isActive: true },
       include: this.productInclude(),
+      orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
     });
     return products.map((p) => this.toResponse(p));
   }
 
-  async findOne(id: string): Promise<ProductResponseDto> {
-    const product = await this.prisma.product.findUnique({
-      where: { id },
+  async findOne(id: string, includeInactive = false): Promise<ProductResponseDto> {
+    const product = await this.prisma.product.findFirst({
+      where: { id, ...(includeInactive ? {} : { isActive: true }) },
       include: this.productInclude(),
     });
     if (!product)
@@ -80,6 +87,7 @@ export class ProductsService {
   async searchByName(name: string): Promise<ProductResponseDto[]> {
     const products = await this.prisma.product.findMany({
       where: {
+        isActive: true,
         name: {
           contains: name,
           mode: 'insensitive',
@@ -93,7 +101,7 @@ export class ProductsService {
   // Filtrar por categoría
   async findByCategory(categoryId: string): Promise<ProductResponseDto[]> {
     const products = await this.prisma.product.findMany({
-      where: { categoryId },
+      where: { categoryId, isActive: true },
       include: this.productInclude(),
     });
     return products.map((p) => this.toResponse(p));
@@ -102,7 +110,7 @@ export class ProductsService {
   // Filtrar por proveedor
   async findByProvider(providerId: string): Promise<ProductResponseDto[]> {
     const products = await this.prisma.product.findMany({
-      where: { providerId },
+      where: { providerId, isActive: true },
       include: this.productInclude(),
     });
     return products.map((p) => this.toResponse(p));
@@ -110,10 +118,11 @@ export class ProductsService {
 
   async create(
     createProductDto: CreateProductDto,
+    actorId: number,
   ): Promise<ProductResponseDto> {
     // Validar que el proveedor existe
     const provider = await this.prisma.provider.findUnique({
-      where: { id: createProductDto.providerId },
+      where: { id: createProductDto.providerId, isActive: true },
     });
     if (!provider) throw new NotFoundException('Proveedor no encontrado');
 
@@ -133,8 +142,9 @@ export class ProductsService {
     }
 
     // Verificar que no exista un producto con el mismo nombre (opcional, pero recomendado)
+    const normalizedName = normalizeSearchText(createProductDto.name);
     const existing = await this.prisma.product.findFirst({
-      where: { name: createProductDto.name },
+      where: { nameNormalized: normalizedName, isActive: true },
     });
     if (existing) {
       throw new ConflictException(
@@ -150,7 +160,8 @@ export class ProductsService {
 
     const product = await this.prisma.product.create({
       data: {
-        name: createProductDto.name,
+        name: normalizeDisplayText(createProductDto.name),
+        nameNormalized: normalizedName,
         description: createProductDto.description,
         providerId: createProductDto.providerId,
         categoryId: createProductDto.categoryId,
@@ -170,12 +181,20 @@ export class ProductsService {
         imageUrl: createProductDto.imageUrl,
       },
     });
+    await this.audit.record({
+      userId: actorId,
+      action: 'PRODUCT_CREATED',
+      entityType: 'PRODUCT',
+      entityId: product.id,
+      after: this.toResponse(product),
+    });
     return this.toResponse(product);
   }
 
   async update(
     id: string,
     updateProductDto: UpdateProductDto,
+    actorId: number,
   ): Promise<ProductResponseDto> {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product)
@@ -184,7 +203,7 @@ export class ProductsService {
     // Validar relaciones si se actualizan
     if (updateProductDto.providerId) {
       const provider = await this.prisma.provider.findUnique({
-        where: { id: updateProductDto.providerId },
+        where: { id: updateProductDto.providerId, isActive: true },
       });
       if (!provider) throw new NotFoundException('Proveedor no encontrado');
     }
@@ -205,10 +224,15 @@ export class ProductsService {
     }
 
     // Si se actualiza el nombre, verificar que no exista otro producto con el mismo nombre
+    const normalizedName = updateProductDto.name
+      ? normalizeSearchText(updateProductDto.name)
+      : product.nameNormalized;
+
     if (updateProductDto.name) {
       const existing = await this.prisma.product.findFirst({
         where: {
-          name: updateProductDto.name,
+          nameNormalized: normalizedName,
+          isActive: true,
           id: { not: id },
         },
       });
@@ -219,10 +243,29 @@ export class ProductsService {
       }
     }
 
+    const priceFields = [
+      'purchasePrice',
+      'priceNormal',
+      'priceCamino',
+      'priceEspecial',
+      'priceMayorista',
+    ] as const;
+    const changedPrices = priceFields.filter(
+      (field) =>
+        updateProductDto[field] !== undefined &&
+        updateProductDto[field] !== product[field],
+    );
+    const changeReason = changedPrices.length
+      ? requireChangeReason(updateProductDto.changeReason, 'cambiar precios')
+      : undefined;
+
     const updated = await this.prisma.product.update({
       where: { id },
       data: {
-        name: updateProductDto.name,
+        name: updateProductDto.name
+          ? normalizeDisplayText(updateProductDto.name)
+          : undefined,
+        nameNormalized: updateProductDto.name ? normalizedName : undefined,
         description: updateProductDto.description,
         providerId: updateProductDto.providerId,
         categoryId: updateProductDto.categoryId,
@@ -242,40 +285,85 @@ export class ProductsService {
         imageUrl: updateProductDto.imageUrl,
       },
     });
+    await this.audit.record({
+      userId: actorId,
+      action: changedPrices.length ? 'PRODUCT_PRICES_UPDATED' : 'PRODUCT_UPDATED',
+      entityType: 'PRODUCT',
+      entityId: id,
+      reason: changeReason,
+      before: this.toResponse(product),
+      after: this.toResponse(updated),
+    });
     return this.toResponse(updated);
   }
 
-  async remove(id: string) {
-    const product = await this.prisma.product.findUnique({
-      where: { id },
-      include: {
-        saleDetails: true,
-        purchaseDetails: true,
-      },
-    });
+  async remove(id: string, actorId: number, reason: string) {
+  const product = await this.prisma.product.findUnique({ where: { id } });
+  if (!product) throw new NotFoundException('Producto no encontrado');
+  if (!product.isActive) return this.toResponse(product);
+  const updated = await this.prisma.product.update({
+    where: { id },
+    data: { isActive: false, deletedAt: new Date() },
+    include: this.productInclude(),
+  });
+  await this.audit.record({
+    userId: actorId,
+    action: 'PRODUCT_DEACTIVATED',
+    entityType: 'PRODUCT',
+    entityId: id,
+    reason,
+    before: this.toResponse(product),
+    after: this.toResponse(updated),
+  });
+  return this.toResponse(updated);
+}
 
-    if (!product) {
-      throw new NotFoundException(`Producto con ID ${id} no encontrado`);
-    }
-
-    if (product.saleDetails.length > 0 || product.purchaseDetails.length > 0) {
-      throw new BadRequestException(
-        'No se puede eliminar este producto porque ya tiene ventas o compras registradas. Puedes mantenerlo en stock 0 o editar sus datos.',
-      );
-    }
-
-    await this.prisma.product.delete({
-      where: { id },
-    });
-
-    return {
-      message: 'Producto eliminado correctamente',
-    };
+async reactivate(id: string, actorId: number, reason: string) {
+  const product = await this.prisma.product.findUnique({ where: { id } });
+  if (!product) throw new NotFoundException('Producto no encontrado');
+  if (product.isActive) return this.toResponse(product);
+  const provider = await this.prisma.provider.findFirst({
+    where: { id: product.providerId, isActive: true },
+  });
+  if (!provider) {
+    throw new BadRequestException(
+      'No se puede reactivar el producto porque su proveedor está inactivo',
+    );
   }
+  const duplicate = await this.prisma.product.findFirst({
+    where: {
+      nameNormalized: product.nameNormalized,
+      isActive: true,
+      id: { not: id },
+    },
+  });
+  if (duplicate) {
+    throw new ConflictException(
+      'Ya existe un producto activo con el mismo nombre',
+    );
+  }
+  const updated = await this.prisma.product.update({
+    where: { id },
+    data: { isActive: true, deletedAt: null },
+    include: this.productInclude(),
+  });
+  await this.audit.record({
+    userId: actorId,
+    action: 'PRODUCT_REACTIVATED',
+    entityType: 'PRODUCT',
+    entityId: id,
+    reason,
+    before: this.toResponse(product),
+    after: this.toResponse(updated),
+  });
+  return this.toResponse(updated);
+}
 
   async updatePurchasePrice(
     id: string,
     newPurchasePrice: number,
+    actorId: number,
+    reason: string,
   ): Promise<ProductResponseDto> {
     const product = await this.prisma.product.findUnique({ where: { id } });
 
@@ -297,6 +385,15 @@ export class ProductsService {
         },
       });
 
+      await this.audit.record({
+        userId: actorId,
+        action: 'PRODUCT_PURCHASE_PRICE_UPDATED',
+        entityType: 'PRODUCT',
+        entityId: id,
+        reason,
+        before: this.toResponse(product),
+        after: this.toResponse(updated),
+      });
       return this.toResponse(updated);
     }
 
@@ -315,6 +412,15 @@ export class ProductsService {
       },
     });
 
+    await this.audit.record({
+      userId: actorId,
+      action: 'PRODUCT_PURCHASE_PRICE_UPDATED',
+      entityType: 'PRODUCT',
+      entityId: id,
+      reason,
+      before: this.toResponse(product),
+      after: this.toResponse(updated),
+    });
     return this.toResponse(updated);
   }
 }
