@@ -37,6 +37,7 @@ const userSelect = {
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,
+  deletedAt: true,
 } as const;
 
 type SelectedUser = Prisma.UserGetPayload<{ select: typeof userSelect }>;
@@ -50,6 +51,7 @@ export class UsersService {
 
   async findAll(): Promise<UserResponseDto[]> {
     const users = await this.prisma.user.findMany({
+      where: { deletedAt: null },
       select: userSelect,
       orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
     });
@@ -405,6 +407,54 @@ export class UsersService {
     };
   }
 
+  async remove(id: number, dto: AdminStepUpDto, actorId: number) {
+    if (id === actorId) {
+      throw new BadRequestException(
+        'No puedes retirar tu propia cuenta de administrador',
+      );
+    }
+
+    const confirmation = await this.stepUp.verify(actorId, dto);
+    const currentUser = await this.getUserForAdministration(id);
+
+    if (
+      currentUser.isActive ||
+      currentUser.status !== $Enums.UserStatus.DISABLED
+    ) {
+      throw new BadRequestException(
+        'Primero debes desactivar al usuario antes de retirarlo',
+      );
+    }
+
+    await this.prisma.$transaction(async (transaction) => {
+      await this.revokeUserSecurity(transaction, id, 'USER_REMOVED_BY_ADMIN');
+      await transaction.user.update({
+        where: { id },
+        data: {
+          deletedAt: new Date(),
+          securityVersion: { increment: 1 },
+        },
+      });
+      await transaction.userAdministrationLog.create({
+        data: {
+          actorId,
+          targetUserId: id,
+          action: $Enums.UserAdministrationAction.USER_REMOVED,
+          details: {
+            operation: 'SAFE_USER_REMOVAL',
+            preservedHistoricalData: true,
+            sessionsRevoked: true,
+            reason: confirmation.reason,
+          },
+        },
+      });
+    });
+
+    return {
+      message: `${currentUser.name} fue retirado de la lista de usuarios. Su historial se conserva.`,
+    };
+  }
+
   async unlock(id: number, dto: AdminStepUpDto, actorId: number) {
     const confirmation = await this.stepUp.verify(actorId, dto);
     const currentUser = await this.getUserForAdministration(id);
@@ -628,7 +678,7 @@ export class UsersService {
       where: { id },
       select: userSelect,
     });
-    if (!user) {
+    if (!user || user.deletedAt) {
       throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
     }
     return user;

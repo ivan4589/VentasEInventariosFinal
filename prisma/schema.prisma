@@ -61,6 +61,7 @@ enum SecurityAuditAction {
 enum UserAdministrationAction {
   USER_CREATED
   USER_UPDATED
+  USER_REMOVED
   ROLE_CHANGED
   STATUS_CHANGED
   PASSWORD_RESET
@@ -91,6 +92,7 @@ model User {
   lastLoginAt         DateTime?
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
+  deletedAt           DateTime?
 
   approvedBy                   User?                   @relation("UserApproval", fields: [approvedById], references: [id], onDelete: SetNull)
   approvedUsers                User[]                  @relation("UserApproval")
@@ -119,6 +121,7 @@ model User {
   @@index([status])
   @@index([lockedUntil])
   @@index([createdAt])
+  @@index([deletedAt])
 }
 
 model SecurityToken {
