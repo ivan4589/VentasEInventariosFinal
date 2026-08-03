@@ -23,7 +23,7 @@ import {
 } from './analytics-report.types';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as puppeteer from 'puppeteer';
+import { renderPdf } from '../common/pdf/render-pdf';
 
 interface ReportActor {
   id: number;
@@ -2486,27 +2486,16 @@ export class AnalyticsReportsService {
   }
 
   private async writePdf(html: string, filename: string): Promise<string> {
-    let browser: puppeteer.Browser | null = null;
-    try {
-      browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'load' });
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        landscape: true,
-        printBackground: true,
-        margin: { top: '16px', bottom: '16px', left: '16px', right: '16px' },
-      });
-      const uploadDir = path.join(process.cwd(), 'uploads', 'reports');
-      fs.mkdirSync(uploadDir, { recursive: true });
-      const safeFilename = filename.replace(/[^\w-]/g, '_');
-      fs.writeFileSync(path.join(uploadDir, `${safeFilename}.pdf`), pdfBuffer);
-      return `/uploads/reports/${safeFilename}.pdf`;
-    } finally {
-      if (browser) await browser.close();
-    }
+    const pdfBuffer = await renderPdf(html, {
+      format: 'A4',
+      landscape: true,
+      printBackground: true,
+      margin: { top: '16px', bottom: '16px', left: '16px', right: '16px' },
+    });
+    const uploadDir = path.join(process.cwd(), 'uploads', 'reports');
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const safeFilename = filename.replace(/[^\w-]/g, '_');
+    fs.writeFileSync(path.join(uploadDir, `${safeFilename}.pdf`), pdfBuffer);
+    return `/uploads/reports/${safeFilename}.pdf`;
   }
 }

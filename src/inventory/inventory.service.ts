@@ -7,9 +7,9 @@ import {
   CentralInventoryProviderDto,
   InventoryResponseDto,
 } from './dto/inventory-response.dto';
-import * as puppeteer from 'puppeteer';
 import * as path from 'path';
 import * as fs from 'fs';
+import { renderPdf } from '../common/pdf/render-pdf';
 
 @Injectable()
 export class InventoryService {
@@ -241,64 +241,48 @@ export class InventoryService {
   ): Promise<{ pdfUrl: string; historyId: string }> {
     const inventory = await this.getInventory();
     const html = this.buildInventoryHTML(inventory);
-    let browser: puppeteer.Browser | null = null;
+    const pdfBuffer = await renderPdf(html, {
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '18mm',
+        right: '12mm',
+        bottom: '18mm',
+        left: '12mm',
+      },
+    });
 
-    try {
-      browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
+    const filename = `inventario-almacen-central-${new Date()
+      .toISOString()
+      .replace(/[:.]/g, '-')
+      .slice(0, 19)}.pdf`;
+    const uploadDir = path.join(process.cwd(), 'uploads', 'reports');
 
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'load' });
-
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: {
-          top: '18mm',
-          right: '12mm',
-          bottom: '18mm',
-          left: '12mm',
-        },
-      });
-
-      const filename = `inventario-almacen-central-${new Date()
-        .toISOString()
-        .replace(/[:.]/g, '-')
-        .slice(0, 19)}.pdf`;
-      const uploadDir = path.join(process.cwd(), 'uploads', 'reports');
-
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-
-      fs.writeFileSync(path.join(uploadDir, filename), pdfBuffer);
-
-      const pdfUrl = `/uploads/reports/${filename}`;
-      const history = await this.prisma.reportHistory.create({
-        data: {
-          type: $Enums.ReportType.INVENTORY_GENERAL,
-          title: 'Inventario del Almacén Central',
-          parameters: JSON.stringify({
-            warehouseId: inventory.warehouse.id,
-            onlyPositiveStock: true,
-            includesPrices: false,
-          }),
-          fileUrl: pdfUrl,
-          userId,
-        },
-      });
-
-      return {
-        pdfUrl: `/api/documents/reports/${history.id}`,
-        historyId: history.id,
-      };
-    } finally {
-      if (browser) {
-        await browser.close();
-      }
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
     }
+
+    fs.writeFileSync(path.join(uploadDir, filename), pdfBuffer);
+
+    const pdfUrl = `/uploads/reports/${filename}`;
+    const history = await this.prisma.reportHistory.create({
+      data: {
+        type: $Enums.ReportType.INVENTORY_GENERAL,
+        title: 'Inventario del Almacén Central',
+        parameters: JSON.stringify({
+          warehouseId: inventory.warehouse.id,
+          onlyPositiveStock: true,
+          includesPrices: false,
+        }),
+        fileUrl: pdfUrl,
+        userId,
+      },
+    });
+
+    return {
+      pdfUrl: `/api/documents/reports/${history.id}`,
+      historyId: history.id,
+    };
   }
 
   async getHistory(userId?: number) {

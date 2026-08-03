@@ -3,9 +3,9 @@ import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportHistoryService } from './report-history.service';
 import { ReportFiltersDto } from './dto/report-filters.dto';
-import * as puppeteer from 'puppeteer';
 import * as path from 'path';
 import * as fs from 'fs';
+import { renderPdf } from '../common/pdf/render-pdf';
 
 @Injectable()
 export class ReportsService {
@@ -866,46 +866,29 @@ export class ReportsService {
     filename: string,
     folder: 'reports' | 'purchases' | 'sales' = 'reports',
   ): Promise<string> {
-    let browser: puppeteer.Browser | null = null;
+    const pdfBuffer = await renderPdf(html, {
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '20px',
+        bottom: '20px',
+        left: '20px',
+        right: '20px',
+      },
+    });
 
-    try {
-      browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
+    const safeFilename = filename.replace(/[^\w-]/g, '_');
+    const uploadDir = path.join(process.cwd(), 'uploads', folder);
 
-      const page = await browser.newPage();
-
-      await page.setContent(html, { waitUntil: 'load' });
-
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: {
-          top: '20px',
-          bottom: '20px',
-          left: '20px',
-          right: '20px',
-        },
-      });
-
-      const safeFilename = filename.replace(/[^\w-]/g, '_');
-      const uploadDir = path.join(process.cwd(), 'uploads', folder);
-
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-
-      const filePath = path.join(uploadDir, `${safeFilename}.pdf`);
-
-      fs.writeFileSync(filePath, pdfBuffer);
-
-      return `/uploads/${folder}/${safeFilename}.pdf`;
-    } finally {
-      if (browser) {
-        await browser.close();
-      }
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
     }
+
+    const filePath = path.join(uploadDir, `${safeFilename}.pdf`);
+
+    fs.writeFileSync(filePath, pdfBuffer);
+
+    return `/uploads/${folder}/${safeFilename}.pdf`;
   }
 
   private buildDocumentHTML(
