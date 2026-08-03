@@ -282,9 +282,7 @@ export class SecurityEmailService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from:
-            this.config.get<string>('EMAIL_FROM')?.trim() ||
-            'Yungas Distribuidora <onboarding@resend.dev>',
+          from: this.fromAddress(),
           to: [input.to],
           subject: input.subject,
           text: input.text,
@@ -311,6 +309,22 @@ export class SecurityEmailService {
       this.logger.error(`No se pudo enviar correo a ${input.to}: ${message}`);
       return { sent: false, error: message };
     }
+  }
+
+  private fromAddress() {
+    const configuredSender =
+      this.config.get<string>('RESEND_FROM_EMAIL')?.trim() ||
+      this.config.get<string>('EMAIL_FROM')?.trim();
+
+    if (!configuredSender) {
+      return 'Yungas Distribuidora <onboarding@resend.dev>';
+    }
+
+    // Permite configurar solo el correo en .env y conserva un nombre legible
+    // en la bandeja de entrada. También acepta el formato "Nombre <correo>".
+    return configuredSender.includes('<')
+      ? configuredSender
+      : `Yungas Distribuidora <${configuredSender}>`;
   }
 
   private layout(content: string) {
