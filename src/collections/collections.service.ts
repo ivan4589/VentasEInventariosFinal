@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReportHistoryService } from '../reports/report-history.service';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as puppeteer from 'puppeteer';
+import { renderPdf } from '../common/pdf/render-pdf';
 
 interface CollectionActor {
   id: number;
@@ -495,48 +495,30 @@ export class CollectionsService {
   }
 
   private async createPdf(html: string, filename: string): Promise<string> {
-    let browser: puppeteer.Browser | null = null;
+    const pdfBuffer = await renderPdf(html, {
+      format: 'A4',
+      landscape: true,
+      printBackground: true,
+      margin: {
+        top: '18px',
+        right: '18px',
+        bottom: '18px',
+        left: '18px',
+      },
+    });
 
-    try {
-      browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    const safeFilename = filename.replace(/[^\w-]/g, '_');
+    const uploadDir = path.join(process.cwd(), 'uploads', 'collections');
+
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, {
+        recursive: true,
       });
-
-      const page = await browser.newPage();
-      await page.setContent(html, {
-        waitUntil: 'load',
-      });
-
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        landscape: true,
-        printBackground: true,
-        margin: {
-          top: '18px',
-          right: '18px',
-          bottom: '18px',
-          left: '18px',
-        },
-      });
-
-      const safeFilename = filename.replace(/[^\w-]/g, '_');
-      const uploadDir = path.join(process.cwd(), 'uploads', 'collections');
-
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, {
-          recursive: true,
-        });
-      }
-
-      fs.writeFileSync(path.join(uploadDir, `${safeFilename}.pdf`), pdfBuffer);
-
-      return `/uploads/collections/${safeFilename}.pdf`;
-    } finally {
-      if (browser) {
-        await browser.close();
-      }
     }
+
+    fs.writeFileSync(path.join(uploadDir, `${safeFilename}.pdf`), pdfBuffer);
+
+    return `/uploads/collections/${safeFilename}.pdf`;
   }
 
   private async saveReportHistory(
