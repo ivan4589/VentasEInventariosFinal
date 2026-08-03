@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -86,6 +87,16 @@ export class UsersController {
     @Request() req: any,
   ) {
     return this.usersService.updateStatus(id, dto, req.user.id);
+  }
+
+  @Delete(':id')
+  @Permissions(PERMISSIONS.USERS_MANAGE)
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AdminStepUpDto,
+    @Request() req: any,
+  ) {
+    return this.usersService.remove(id, dto, req.user.id);
   }
 
   @Patch(':id/password')

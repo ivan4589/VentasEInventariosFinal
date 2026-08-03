@@ -291,7 +291,7 @@ export class InventoryService {
       });
 
       return {
-        pdfUrl,
+        pdfUrl: `/api/documents/reports/${history.id}`,
         historyId: history.id,
       };
     } finally {

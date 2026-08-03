@@ -1,6 +1,11 @@
 jest.mock('puppeteer', () => ({
   launch: jest.fn(),
 }));
+jest.mock('fs', () => ({
+  existsSync: jest.fn().mockReturnValue(false),
+  mkdirSync: jest.fn(),
+  writeFileSync: jest.fn(),
+}));
 
 import { BadRequestException } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
@@ -95,5 +100,51 @@ describe('InventoryService', () => {
     await expect(service.getInventory()).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+
+  it('devuelve la ruta protegida del PDF generado', async () => {
+    const page = {
+      setContent: jest.fn(),
+      pdf: jest.fn().mockResolvedValue(Buffer.from('pdf')),
+    };
+    const browser = {
+      newPage: jest.fn().mockResolvedValue(page),
+      close: jest.fn(),
+    };
+    const puppeteerMock = jest.requireMock('puppeteer') as {
+      launch: jest.Mock;
+    };
+    puppeteerMock.launch.mockResolvedValue(browser);
+
+    const prisma: any = {
+      warehouse: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'warehouse_central',
+          name: 'Almacén Central',
+          code: 'CENTRAL',
+          stocks: [],
+        }),
+      },
+      reportHistory: {
+        create: jest.fn().mockResolvedValue({ id: 'history_123' }),
+      },
+    };
+    const service = new InventoryService(prisma);
+
+    const result = await service.generateInventoryPDF(7);
+
+    expect(result).toEqual({
+      pdfUrl: '/api/documents/reports/history_123',
+      historyId: 'history_123',
+    });
+    expect(prisma.reportHistory.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          fileUrl: expect.stringMatching(/^\/uploads\/reports\/.+\.pdf$/),
+          userId: 7,
+        }),
+      }),
+    );
+    expect(browser.close).toHaveBeenCalled();
   });
 });
