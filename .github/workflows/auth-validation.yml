@@ -8,6 +8,8 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig*.json'
+      - 'scripts/**'
+      - 'docs/production.md'
       - '.github/workflows/auth-validation.yml'
 
 permissions:
@@ -30,11 +32,14 @@ jobs:
       - run: npm ci
       - run: npx prisma validate
       - run: npx prisma generate
+      - run: npm run lint:production
       - run: npm run build
       - name: Run security, reports and economic integrity tests
         run: |
           npm test -- --runInBand \
             src/auth/authorization/permissions.spec.ts \
+            src/config/environment.spec.ts \
+            src/health/health.controller.spec.ts \
             src/auth/security-crypto.spec.ts \
             src/auth/auth.service.spec.ts \
             src/auth/auth.controller.spec.ts \
