@@ -22,12 +22,17 @@ import { CollectionsModule } from './collections/collections.module';
 import { WarehouseTransfersModule } from './warehouse-transfers/warehouse-transfers.module';
 import { EconomicIntegrityModule } from './economic-integrity/economic-integrity.module';
 import { DataProtectionModule } from './data-protection/data-protection.module';
+import { validateEnvironment } from './config/environment';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      cache: true,
+      validate: validateEnvironment,
     }),
+    HealthModule,
     PrismaModule,
     EconomicIntegrityModule,
     DataProtectionModule,

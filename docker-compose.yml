@@ -1,15 +1,20 @@
-version: '3.8'
 services:
   postgres:
-    image: postgres:15
-    container_name: sistema_ventas_db
+    image: postgres:15.13-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: sistema_ventas
+      POSTGRES_USER: ${POSTGRES_USER:-ventas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en el entorno}
+      POSTGRES_DB: ${POSTGRES_DB:-sistema_ventas}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ventas} -d ${POSTGRES_DB:-sistema_ventas}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 volumes:
   postgres_data:

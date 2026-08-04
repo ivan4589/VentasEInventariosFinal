@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  lockEconomicResources,
   requireOperationKey,
   requireReason,
   roundMoney,
@@ -23,5 +24,19 @@ describe('economic integrity helpers', () => {
       'Error de registro confirmado',
     );
     expect(() => requireReason('corto')).toThrow(BadRequestException);
+  });
+
+  it('adquiere bloqueos concurrentes en orden estable y sin duplicados', async () => {
+    const transaction = { $queryRawUnsafe: jest.fn().mockResolvedValue([]) };
+
+    await Promise.all([
+      lockEconomicResources(transaction, ['stock:2', 'stock:1', 'stock:2']),
+      lockEconomicResources(transaction, ['stock:1', 'stock:2']),
+    ]);
+
+    const resources = transaction.$queryRawUnsafe.mock.calls.map(
+      (call: unknown[]) => call[1],
+    );
+    expect(resources).toEqual(['stock:1', 'stock:1', 'stock:2', 'stock:2']);
   });
 });
