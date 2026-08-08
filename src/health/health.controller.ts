@@ -32,7 +32,9 @@ export class HealthController {
       };
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Error desconocido de PostgreSQL';
+        error instanceof Error
+          ? error.message
+          : 'Error desconocido de PostgreSQL';
       this.logger.error({
         event: 'database_readiness_failed',
         error: {
