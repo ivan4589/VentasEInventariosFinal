@@ -7,7 +7,7 @@ const base = {
   TWO_FACTOR_ENCRYPTION_KEY: 'development-encryption-key',
   FRONTEND_URL: 'http://localhost:5173',
   SUPABASE_URL: 'https://project.supabase.co',
-  SUPABASE_SERVICE_ROLE_KEY: 'service-role-'.padEnd(40, 's'),
+  SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_'.padEnd(40, 's'),
 };
 
 describe('production environment validation', () => {

@@ -1,4 +1,5 @@
-const PLACEHOLDER_PATTERN = /reemplazar|change[-_ ]?me|ci-only|example|secret/i;
+const PLACEHOLDER_PATTERN =
+  /reemplazar|change[-_ ]?me|ci-only|example|^(?:secret|password)(?:[-_ ].*)?$/i;
 
 function required(config: Record<string, unknown>, name: string): string {
   const raw = config[name];
