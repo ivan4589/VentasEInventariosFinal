@@ -6,6 +6,8 @@ const base = {
   JWT_SECRET: 'development-secret',
   TWO_FACTOR_ENCRYPTION_KEY: 'development-encryption-key',
   FRONTEND_URL: 'http://localhost:5173',
+  SUPABASE_URL: 'https://project.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY: 'service-role-'.padEnd(40, 's'),
 };
 
 describe('production environment validation', () => {
@@ -26,6 +28,7 @@ describe('production environment validation', () => {
       'https://ventas.example.com,https://admin.example.com',
     );
     expect(config.TRUST_PROXY).toBe('true');
+    expect(config.STORAGE_DRIVER).toBe('supabase');
   });
 
   it('rechaza secretos de ejemplo en producción', () => {

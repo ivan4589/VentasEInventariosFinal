@@ -7,13 +7,15 @@ import {
   CentralInventoryProviderDto,
   InventoryResponseDto,
 } from './dto/inventory-response.dto';
-import * as path from 'path';
-import * as fs from 'fs';
 import { renderPdf } from '../common/pdf/render-pdf';
+import { ObjectStorageService } from '../storage/object-storage.service';
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: ObjectStorageService,
+  ) {}
 
   private roundQuantity(value: number): number {
     return Math.round((value + Number.EPSILON) * 1000) / 1000;
@@ -256,15 +258,11 @@ export class InventoryService {
       .toISOString()
       .replace(/[:.]/g, '-')
       .slice(0, 19)}.pdf`;
-    const uploadDir = path.join(process.cwd(), 'uploads', 'reports');
-
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
-    fs.writeFileSync(path.join(uploadDir, filename), pdfBuffer);
-
-    const pdfUrl = `/uploads/reports/${filename}`;
+    const pdfUrl = await this.storage.savePrivatePdf(
+      'reports',
+      filename,
+      pdfBuffer,
+    );
     const history = await this.prisma.reportHistory.create({
       data: {
         type: $Enums.ReportType.INVENTORY_GENERAL,
@@ -307,7 +305,6 @@ export class InventoryService {
     });
   }
 
-
   async getStockPosition(warehouseId: string, productId: string) {
     const position = await this.prisma.warehouseStock.findUnique({
       where: { warehouseId_productId: { warehouseId, productId } },
@@ -316,7 +313,8 @@ export class InventoryService {
         product: { select: { id: true, name: true } },
       },
     });
-    if (!position) throw new BadRequestException('No existe stock para el producto');
+    if (!position)
+      throw new BadRequestException('No existe stock para el producto');
     return {
       warehouseId,
       warehouseName: position.warehouse.name,
@@ -360,7 +358,9 @@ export class InventoryService {
       const previousStock = this.roundQuantity(current?.stock || 0);
       const reservedStock = this.roundQuantity(current?.reservedStock || 0);
       const newStock = this.roundQuantity(previousStock + dto.quantityChange);
-      const globalStock = this.roundQuantity(product.stock + dto.quantityChange);
+      const globalStock = this.roundQuantity(
+        product.stock + dto.quantityChange,
+      );
 
       if (newStock < 0 || globalStock < 0) {
         throw new BadRequestException('El ajuste dejaría el stock en negativo');

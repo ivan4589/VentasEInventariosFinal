@@ -7,10 +7,9 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readFile } from 'fs/promises';
-import * as path from 'path';
 import { $Enums, WhatsAppSendStatus } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ObjectStorageService } from '../storage/object-storage.service';
 
 interface WhatsAppConfiguration {
   accessToken: string;
@@ -45,6 +44,7 @@ export class WhatsAppService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly storage: ObjectStorageService,
   ) {}
 
   normalizePhone(phone: string): string {
@@ -96,20 +96,6 @@ export class WhatsAppService {
       templateLanguage:
         this.configService.get<string>('WHATSAPP_TEMPLATE_LANGUAGE') || 'es',
     };
-  }
-
-  private resolvePdfPath(pdfUrl: string): string {
-    const relativePath = decodeURIComponent(pdfUrl)
-      .replace(/^https?:\/\/[^/]+/i, '')
-      .replace(/^\/+/, '');
-    const uploadsRoot = path.resolve(process.cwd(), 'uploads');
-    const filePath = path.resolve(process.cwd(), relativePath);
-
-    if (!filePath.startsWith(`${uploadsRoot}${path.sep}`)) {
-      throw new BadRequestException('La ruta del PDF de la venta no es válida');
-    }
-
-    return filePath;
   }
 
   private async readMetaResponse(response: Response): Promise<MetaApiResponse> {
@@ -310,12 +296,7 @@ export class WhatsAppService {
 
     try {
       const configuration = this.getConfiguration();
-      const filePath = this.resolvePdfPath(sale.pdfUrl);
-      const pdfBuffer = await readFile(filePath).catch(() => {
-        throw new BadRequestException(
-          'No se encontró el PDF de la venta en el servidor',
-        );
-      });
+      const pdfBuffer = await this.storage.readPrivate(sale.pdfUrl);
       const filename = `nota-venta-${sale.saleNumber.replace(
         /[^\w-]/g,
         '_',

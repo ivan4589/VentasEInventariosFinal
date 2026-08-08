@@ -24,6 +24,7 @@ import { EconomicIntegrityModule } from './economic-integrity/economic-integrity
 import { DataProtectionModule } from './data-protection/data-protection.module';
 import { validateEnvironment } from './config/environment';
 import { HealthModule } from './health/health.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { HealthModule } from './health/health.module';
       validate: validateEnvironment,
     }),
     HealthModule,
+    StorageModule,
     PrismaModule,
     EconomicIntegrityModule,
     DataProtectionModule,

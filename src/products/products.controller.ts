@@ -13,9 +13,6 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import * as fs from 'fs';
-import { extname, join } from 'path';
 import { $Enums } from '../../generated/prisma/client';
 import { PERMISSIONS } from '../auth/authorization/permissions';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -27,19 +24,15 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdatePurchasePriceDto } from './dto/update-purchase-price.dto';
 import { CancelEconomicOperationDto } from '../economic-integrity/dto/cancel-economic-operation.dto';
 import { ProductsService } from './products.service';
-
-const productImagesDir = join(process.cwd(), 'uploads', 'products');
-
-function ensureProductImagesDir() {
-  if (!fs.existsSync(productImagesDir)) {
-    fs.mkdirSync(productImagesDir, { recursive: true });
-  }
-}
+import { ObjectStorageService } from '../storage/object-storage.service';
 
 @Controller('products')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly storage: ObjectStorageService,
+  ) {}
 
   @Get()
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
@@ -79,21 +72,6 @@ export class ProductsController {
   @Permissions(PERMISSIONS.PRODUCTS_MANAGE)
   @UseInterceptors(
     FileInterceptor('image', {
-      storage: diskStorage({
-        destination: (_req, _file, callback) => {
-          ensureProductImagesDir();
-          callback(null, productImagesDir);
-        },
-        filename: (_req, file, callback) => {
-          const safeOriginalName = file.originalname
-            .replace(extname(file.originalname), '')
-            .replace(/[^a-zA-Z0-9-_]/g, '_');
-          const uniqueName = `${Date.now()}-${Math.round(
-            Math.random() * 1e9,
-          )}-${safeOriginalName}${extname(file.originalname).toLowerCase()}`;
-          callback(null, uniqueName);
-        },
-      }),
       fileFilter: (_req, file, callback) => {
         const allowedMimeTypes = [
           'image/jpeg',
@@ -114,9 +92,14 @@ export class ProductsController {
       limits: { fileSize: 2 * 1024 * 1024 },
     }),
   )
-  uploadImage(@UploadedFile() file: Express.Multer.File) {
+  async uploadImage(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('Debes subir una imagen');
-    return { imageUrl: `/uploads/products/${file.filename}` };
+    const imageUrl = await this.storage.saveProductImage(
+      file.originalname,
+      file.mimetype,
+      file.buffer,
+    );
+    return { imageUrl };
   }
 
   @Post()

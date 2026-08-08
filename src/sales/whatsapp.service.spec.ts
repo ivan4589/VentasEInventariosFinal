@@ -1,12 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readFile } from 'fs/promises';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from './whatsapp.service';
-
-jest.mock('fs/promises', () => ({
-  readFile: jest.fn(),
-}));
 
 describe('WhatsAppService', () => {
   const configValues: Record<string, string> = {
@@ -28,9 +23,13 @@ describe('WhatsAppService', () => {
       create: jest.fn(),
     },
   };
+  const storage = {
+    readPrivate: jest.fn().mockResolvedValue(Buffer.from('pdf')),
+  };
   const service = new WhatsAppService(
     prisma as unknown as PrismaService,
     configService,
+    storage as any,
   );
 
   beforeEach(() => {
@@ -81,9 +80,7 @@ describe('WhatsAppService', () => {
     prisma.saleWhatsAppLog.create.mockResolvedValue({
       createdAt: sentAt,
     });
-    (readFile as jest.MockedFunction<typeof readFile>).mockResolvedValue(
-      Buffer.from('%PDF-test'),
-    );
+    storage.readPrivate.mockResolvedValue(Buffer.from('%PDF-test'));
 
     const fetchMock = jest
       .spyOn(global, 'fetch')
