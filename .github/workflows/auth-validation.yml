@@ -24,8 +24,8 @@ jobs:
       JWT_SECRET: ci-only-validation-secret
       TWO_FACTOR_ENCRYPTION_KEY: ci-only-validation-key-32-bytes!!
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
