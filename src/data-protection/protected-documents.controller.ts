@@ -35,10 +35,10 @@ export class ProtectedDocumentsController {
     await this.documents.recordDownload(req.user, descriptor);
     response.setHeader('Cache-Control', 'no-store, private');
     response.setHeader('Pragma', 'no-cache');
-    return response.download(
-      descriptor.filePath,
-      descriptor.downloadName,
-    );
+    return response
+      .type('application/pdf')
+      .attachment(descriptor.downloadName)
+      .send(descriptor.content);
   }
 
   @Get('sales/:saleId')
@@ -50,10 +50,7 @@ export class ProtectedDocumentsController {
     @Request() req: any,
     @Res() response: Response,
   ) {
-    const descriptor = await this.documents.sale(
-      saleId,
-      cancelled === 'true',
-    );
+    const descriptor = await this.documents.sale(saleId, cancelled === 'true');
     return this.send(descriptor, req, response);
   }
 

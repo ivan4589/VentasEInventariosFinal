@@ -3,11 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { access } from 'fs/promises';
-import * as path from 'path';
 import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DataAuditService } from './data-audit.service';
+import { ObjectStorageService } from '../storage/object-storage.service';
 
 export interface DocumentActor {
   id: number;
@@ -15,7 +14,7 @@ export interface DocumentActor {
 }
 
 export interface ProtectedDocumentDescriptor {
-  filePath: string;
+  content: Buffer;
   downloadName: string;
   entityType: string;
   entityId: string;
@@ -26,6 +25,7 @@ export class ProtectedDocumentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: DataAuditService,
+    private readonly storage: ObjectStorageService,
   ) {}
 
   private async descriptor(
@@ -38,21 +38,8 @@ export class ProtectedDocumentsService {
       throw new NotFoundException('El documento todavía no está disponible');
     }
 
-    const relativePath = decodeURIComponent(fileUrl)
-      .replace(/^https?:\/\/[^/]+/i, '')
-      .replace(/^\/+/, '');
-    const uploadsRoot = path.resolve(process.cwd(), 'uploads');
-    const filePath = path.resolve(process.cwd(), relativePath);
-
-    if (!filePath.startsWith(`${uploadsRoot}${path.sep}`)) {
-      throw new ForbiddenException('La ruta del documento no es válida');
-    }
-
-    await access(filePath).catch(() => {
-      throw new NotFoundException('El archivo no existe en el servidor');
-    });
-
-    return { filePath, downloadName, entityType, entityId };
+    const content = await this.storage.readPrivate(fileUrl);
+    return { content, downloadName, entityType, entityId };
   }
 
   async sale(

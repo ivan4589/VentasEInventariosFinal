@@ -7,9 +7,8 @@ import {
 import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportHistoryService } from '../reports/report-history.service';
-import * as fs from 'fs';
-import * as path from 'path';
 import { renderPdf } from '../common/pdf/render-pdf';
+import { ObjectStorageService } from '../storage/object-storage.service';
 
 interface CollectionActor {
   id: number;
@@ -55,6 +54,7 @@ export class CollectionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reportHistoryService: ReportHistoryService,
+    private readonly storage: ObjectStorageService,
   ) {}
 
   private roundMoney(value: number): number {
@@ -508,17 +508,11 @@ export class CollectionsService {
     });
 
     const safeFilename = filename.replace(/[^\w-]/g, '_');
-    const uploadDir = path.join(process.cwd(), 'uploads', 'collections');
-
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, {
-        recursive: true,
-      });
-    }
-
-    fs.writeFileSync(path.join(uploadDir, `${safeFilename}.pdf`), pdfBuffer);
-
-    return `/uploads/collections/${safeFilename}.pdf`;
+    return this.storage.savePrivatePdf(
+      'collections',
+      `${safeFilename}.pdf`,
+      pdfBuffer,
+    );
   }
 
   private async saveReportHistory(

@@ -4,6 +4,7 @@ import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportHistoryService } from '../reports/report-history.service';
 import { CollectionsService } from './collections.service';
+import { ObjectStorageService } from '../storage/object-storage.service';
 
 jest.mock('puppeteer', () => ({
   launch: jest.fn(),
@@ -28,9 +29,7 @@ describe('CollectionsService', () => {
     },
   };
 
-  const createAssignableSale = (
-    saleType: $Enums.SaleType,
-  ) => ({
+  const createAssignableSale = (saleType: $Enums.SaleType) => ({
     id: `sale-${saleType.toLowerCase()}`,
     saleNumber: `20260723-${saleType}`,
     saleType,
@@ -55,6 +54,10 @@ describe('CollectionsService', () => {
           useValue: {
             create: jest.fn(),
           },
+        },
+        {
+          provide: ObjectStorageService,
+          useValue: { savePrivatePdf: jest.fn() },
         },
       ],
     }).compile();
@@ -186,15 +189,10 @@ describe('CollectionsService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it.each([
-    $Enums.SaleType.CASH,
-    $Enums.SaleType.CREDIT,
-  ])(
+  it.each([$Enums.SaleType.CASH, $Enums.SaleType.CREDIT])(
     'permite asignar una venta %s confirmada con saldo',
     async (saleType) => {
-      prisma.sale.findUnique.mockResolvedValue(
-        createAssignableSale(saleType),
-      );
+      prisma.sale.findUnique.mockResolvedValue(createAssignableSale(saleType));
       prisma.user.findUnique.mockResolvedValue({
         id: 7,
         name: 'Responsable',
@@ -216,18 +214,13 @@ describe('CollectionsService', () => {
       });
 
       await expect(
-        service.assign(
-          `sale-${saleType.toLowerCase()}`,
-          7,
-          {
-            id: 1,
-            role: $Enums.Role.ADMIN,
-          },
-        ),
+        service.assign(`sale-${saleType.toLowerCase()}`, 7, {
+          id: 1,
+          role: $Enums.Role.ADMIN,
+        }),
       ).resolves.toEqual(
         expect.objectContaining({
-          message:
-            'Cobranza asignada correctamente',
+          message: 'Cobranza asignada correctamente',
         }),
       );
     },

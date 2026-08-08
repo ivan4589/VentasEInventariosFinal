@@ -8,13 +8,17 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AnalyticsReportsService } from './analytics-reports.service';
 
 describe('AnalyticsReportsService', () => {
+  const reportHistoryService = {} as any;
+  const storage = {} as any;
+  const createService = (prisma: PrismaService) =>
+    new AnalyticsReportsService(prisma, reportHistoryService, storage);
   const admin = {
     id: 1,
     role: $Enums.Role.ADMIN,
   };
 
   it('muestra los trece reportes al ADMIN y oculta costos a otros roles', () => {
-    const service = new AnalyticsReportsService({} as unknown as PrismaService);
+    const service = createService({} as unknown as PrismaService);
 
     expect(service.getCatalog($Enums.Role.ADMIN)).toHaveLength(13);
     expect(
@@ -72,9 +76,7 @@ describe('AnalyticsReportsService', () => {
         findMany,
       },
     };
-    const service = new AnalyticsReportsService(
-      prisma as unknown as PrismaService,
-    );
+    const service = createService(prisma as unknown as PrismaService);
 
     const report = await service.getReport('inventory-valuation', {}, admin);
     const combined = report.sections[report.sections.length - 1].tables[0];
@@ -85,7 +87,7 @@ describe('AnalyticsReportsService', () => {
   });
 
   it('impide consultar la valorización a un VENDEDOR', async () => {
-    const service = new AnalyticsReportsService({} as unknown as PrismaService);
+    const service = createService({} as unknown as PrismaService);
 
     await expect(
       service.getReport(
@@ -106,9 +108,7 @@ describe('AnalyticsReportsService', () => {
         findMany,
       },
     };
-    const service = new AnalyticsReportsService(
-      prisma as unknown as PrismaService,
-    );
+    const service = createService(prisma as unknown as PrismaService);
 
     await service.getReport(
       'collections',
@@ -135,7 +135,7 @@ describe('AnalyticsReportsService', () => {
   });
 
   it('resume por producto los clientes y la cantidad total de la matriz', () => {
-    const service = new AnalyticsReportsService({} as unknown as PrismaService);
+    const service = createService({} as unknown as PrismaService);
     const product = {
       id: 'product_a_12345678',
       name: 'Fideo @',

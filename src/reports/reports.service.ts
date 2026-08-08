@@ -3,38 +3,34 @@ import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportHistoryService } from './report-history.service';
 import { ReportFiltersDto } from './dto/report-filters.dto';
-import * as path from 'path';
-import * as fs from 'fs';
 import { renderPdf } from '../common/pdf/render-pdf';
+import { ObjectStorageService } from '../storage/object-storage.service';
 
 @Injectable()
 export class ReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reportHistoryService: ReportHistoryService,
+    private readonly storage: ObjectStorageService,
   ) {}
 
   private escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-  async generatePurchasePDF(
-  purchaseId: string,
-): Promise<string> {
-  const purchase =
-    await this.prisma.purchase.findUnique({
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+  async generatePurchasePDF(purchaseId: string): Promise<string> {
+    const purchase = await this.prisma.purchase.findUnique({
       where: {
         id: purchaseId,
       },
       include: {
         providerGroups: {
           where: {
-            status:
-              $Enums.PurchaseProviderStatus.RECEIVED,
+            status: $Enums.PurchaseProviderStatus.RECEIVED,
           },
           include: {
             provider: true,
@@ -49,81 +45,65 @@ export class ReportsService {
       },
     });
 
-  if (!purchase) {
-    throw new NotFoundException(
-      'Compra no encontrada',
-    );
-  }
-
-  if (
-    purchase.status !==
-    $Enums.PurchaseStatus.RECEIVED
-  ) {
-    throw new NotFoundException(
-      'El comprobante solo se genera cuando la compra está recibida',
-    );
-  }
-
-  const providerGroups = [
-    ...purchase.providerGroups,
-  ].sort((a, b) =>
-    a.provider.companyName.localeCompare(
-      b.provider.companyName,
-    ),
-  );
-
-  let providersHtml = '';
-  let generalTotal = 0;
-
-  for (const providerGroup of providerGroups) {
-    const categoryMap = new Map<
-      string,
-      {
-        name: string;
-        details: typeof providerGroup.details;
-        subtotal: number;
-      }
-    >();
-
-    for (const detail of providerGroup.details) {
-      const categoryId = detail.categoryId;
-      const categoryName =
-        detail.category?.name || 'Sin categoría';
-
-      const current = categoryMap.get(categoryId);
-
-      if (current) {
-        current.details.push(detail);
-        current.subtotal += detail.subtotal;
-      } else {
-        categoryMap.set(categoryId, {
-          name: categoryName,
-          details: [detail],
-          subtotal: detail.subtotal,
-        });
-      }
+    if (!purchase) {
+      throw new NotFoundException('Compra no encontrada');
     }
 
-    let rows = '';
-    let providerTotal = 0;
+    if (purchase.status !== $Enums.PurchaseStatus.RECEIVED) {
+      throw new NotFoundException(
+        'El comprobante solo se genera cuando la compra está recibida',
+      );
+    }
 
-    const categories = Array.from(
-      categoryMap.values(),
-    ).sort((a, b) =>
-      a.name.localeCompare(b.name),
+    const providerGroups = [...purchase.providerGroups].sort((a, b) =>
+      a.provider.companyName.localeCompare(b.provider.companyName),
     );
 
-    for (const category of categories) {
-      const sortedDetails = [
-        ...category.details,
-      ].sort((a, b) =>
-        a.product.name.localeCompare(
-          b.product.name,
-        ),
+    let providersHtml = '';
+    let generalTotal = 0;
+
+    for (const providerGroup of providerGroups) {
+      const categoryMap = new Map<
+        string,
+        {
+          name: string;
+          details: typeof providerGroup.details;
+          subtotal: number;
+        }
+      >();
+
+      for (const detail of providerGroup.details) {
+        const categoryId = detail.categoryId;
+        const categoryName = detail.category?.name || 'Sin categoría';
+
+        const current = categoryMap.get(categoryId);
+
+        if (current) {
+          current.details.push(detail);
+          current.subtotal += detail.subtotal;
+        } else {
+          categoryMap.set(categoryId, {
+            name: categoryName,
+            details: [detail],
+            subtotal: detail.subtotal,
+          });
+        }
+      }
+
+      let rows = '';
+      let providerTotal = 0;
+
+      const categories = Array.from(categoryMap.values()).sort((a, b) =>
+        a.name.localeCompare(b.name),
       );
 
-      for (const detail of sortedDetails) {
-        rows += `
+      for (const category of categories) {
+        const sortedDetails = [...category.details].sort((a, b) =>
+          a.product.name.localeCompare(b.product.name),
+        );
+
+        for (const detail of sortedDetails) {
+          rows += `
           <tr>
             <td>${this.escapeHtml(detail.product.name)}</td>
             <td>${this.escapeHtml(category.name)}</td>
@@ -132,11 +112,11 @@ export class ReportsService {
             <td class="number">${detail.subtotal.toFixed(2)}</td>
           </tr>
         `;
-      }
+        }
 
-      providerTotal += category.subtotal;
+        providerTotal += category.subtotal;
 
-      rows += `
+        rows += `
         <tr class="category-total">
           <td colspan="4">
             Subtotal categoría ${this.escapeHtml(category.name)}
@@ -146,16 +126,14 @@ export class ReportsService {
           </td>
         </tr>
       `;
-    }
+      }
 
-    generalTotal += providerTotal;
+      generalTotal += providerTotal;
 
-    providersHtml += `
+      providersHtml += `
       <section class="provider-section">
         <div class="provider-title">
-          Proveedor: ${this.escapeHtml(
-            providerGroup.provider.companyName,
-          )}
+          Proveedor: ${this.escapeHtml(providerGroup.provider.companyName)}
         </div>
 
         <table>
@@ -175,9 +153,7 @@ export class ReportsService {
             <tr class="provider-total">
               <td colspan="4">
                 Total proveedor:
-                ${this.escapeHtml(
-                  providerGroup.provider.companyName,
-                )}
+                ${this.escapeHtml(providerGroup.provider.companyName)}
               </td>
               <td class="number">
                 ${providerTotal.toFixed(2)}
@@ -187,13 +163,11 @@ export class ReportsService {
         </table>
       </section>
     `;
-  }
+    }
 
-  const purchaseDate = new Date(
-    purchase.date,
-  ).toLocaleDateString('es-BO');
+    const purchaseDate = new Date(purchase.date).toLocaleDateString('es-BO');
 
-  const html = `
+    const html = `
     <!DOCTYPE html>
     <html lang="es">
       <head>
@@ -301,17 +275,14 @@ export class ReportsService {
     </html>
   `;
 
-  return this.generatePDF(
-    html,
-    `comprobante-compra-${purchase.id}`,
-    'purchases',
-  );
-}
+    return this.generatePDF(
+      html,
+      `comprobante-compra-${purchase.id}`,
+      'purchases',
+    );
+  }
 
-  async generateSalePDF(
-    saleId: string,
-    isCancelled = false,
-  ): Promise<string> {
+  async generateSalePDF(saleId: string, isCancelled = false): Promise<string> {
     const sale = await this.prisma.sale.findUnique({
       where: { id: saleId },
       include: {
@@ -384,9 +355,7 @@ export class ReportsService {
     return this.generatePDF(html, fileName, 'sales');
   }
 
-  async getInventoryGeneral(
-    role: $Enums.Role = $Enums.Role.ADMIN,
-  ) {
+  async getInventoryGeneral(role: $Enums.Role = $Enums.Role.ADMIN) {
     const canViewCosts = role === $Enums.Role.ADMIN;
     const products = await this.prisma.product.findMany({
       where: {
@@ -397,10 +366,7 @@ export class ReportsService {
         category: true,
         provider: true,
       },
-      orderBy: [
-        { category: { name: 'asc' } },
-        { name: 'asc' },
-      ],
+      orderBy: [{ category: { name: 'asc' } }, { name: 'asc' }],
     });
 
     const items = products.map((product) => {
@@ -579,7 +545,8 @@ export class ReportsService {
       totalAmount: sales.reduce((sum, sale) => sum + sale.total, 0),
       totalPaid: sales.reduce(
         (sum, sale) =>
-          sum + sale.payments.reduce((pSum, payment) => pSum + payment.amount, 0),
+          sum +
+          sale.payments.reduce((pSum, payment) => pSum + payment.amount, 0),
         0,
       ),
       generatedAt: new Date(),
@@ -779,7 +746,10 @@ export class ReportsService {
 
     return {
       payments,
-      totalCollected: payments.reduce((sum, payment) => sum + payment.amount, 0),
+      totalCollected: payments.reduce(
+        (sum, payment) => sum + payment.amount,
+        0,
+      ),
       totalCash: payments
         .filter((payment) => payment.method === $Enums.PaymentMethod.CASH)
         .reduce((sum, payment) => sum + payment.amount, 0),
@@ -878,17 +848,11 @@ export class ReportsService {
     });
 
     const safeFilename = filename.replace(/[^\w-]/g, '_');
-    const uploadDir = path.join(process.cwd(), 'uploads', folder);
-
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
-    const filePath = path.join(uploadDir, `${safeFilename}.pdf`);
-
-    fs.writeFileSync(filePath, pdfBuffer);
-
-    return `/uploads/${folder}/${safeFilename}.pdf`;
+    return this.storage.savePrivatePdf(
+      folder,
+      `${safeFilename}.pdf`,
+      pdfBuffer,
+    );
   }
 
   private buildDocumentHTML(

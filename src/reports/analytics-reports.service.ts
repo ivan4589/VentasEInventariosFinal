@@ -21,9 +21,8 @@ import {
   ReportTable,
   ReportValue,
 } from './analytics-report.types';
-import * as fs from 'fs';
-import * as path from 'path';
 import { renderPdf } from '../common/pdf/render-pdf';
+import { ObjectStorageService } from '../storage/object-storage.service';
 
 interface ReportActor {
   id: number;
@@ -155,6 +154,7 @@ export class AnalyticsReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reportHistoryService: ReportHistoryService,
+    private readonly storage: ObjectStorageService,
   ) {}
 
   getCatalog(role: $Enums.Role): AnalyticsReportCatalogItem[] {
@@ -2492,10 +2492,11 @@ export class AnalyticsReportsService {
       printBackground: true,
       margin: { top: '16px', bottom: '16px', left: '16px', right: '16px' },
     });
-    const uploadDir = path.join(process.cwd(), 'uploads', 'reports');
-    fs.mkdirSync(uploadDir, { recursive: true });
     const safeFilename = filename.replace(/[^\w-]/g, '_');
-    fs.writeFileSync(path.join(uploadDir, `${safeFilename}.pdf`), pdfBuffer);
-    return `/uploads/reports/${safeFilename}.pdf`;
+    return this.storage.savePrivatePdf(
+      'reports',
+      `${safeFilename}.pdf`,
+      pdfBuffer,
+    );
   }
 }

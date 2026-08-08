@@ -4,11 +4,31 @@ Este documento es el contrato operativo del backend. Una publicación no se cons
 
 ## Configuración y despliegue
 
-1. Usar Node.js 22 y ejecutar `npm ci`, `npx prisma generate`, `npx prisma migrate deploy`, `npm run build` y `npm run start:prod`.
+1. Usar Node.js 22 y ejecutar `npm ci`, `npx prisma generate`, `npm run deploy:db`, `npm run build` y `npm run start:prod`. El entrypoint compilado esperado es `dist/src/main.js`.
 2. Definir `NODE_ENV=production`, URLs HTTPS y secretos diferentes de al menos 32 caracteres. El arranque se detiene si la configuración es insegura.
 3. Mantener la base de datos en una red privada. El `docker-compose.yml` de desarrollo solo publica PostgreSQL en `127.0.0.1` y exige contraseña.
 4. Terminar TLS en el proxy, configurar `TRUST_PROXY=true` y limitar `CORS_ORIGINS` a los dominios reales.
-5. Montar `uploads/` y `BACKUP_DIR` en almacenamiento persistente. Los documentos sensibles continúan sirviéndose únicamente por endpoints autenticados.
+5. Configurar `STORAGE_DRIVER=supabase`; usar un bucket público para imágenes de productos y uno privado para PDFs. Los documentos sensibles continúan sirviéndose únicamente por endpoints autenticados. `BACKUP_DIR` sí debe apuntar a almacenamiento persistente y externo.
+
+La imagen de producción se construye desde el `Dockerfile` multi-stage, ejecuta como el usuario no privilegiado `node` e instala Chromium del sistema para generar PDFs. No pasar secretos como argumentos de compilación; Render debe inyectarlos únicamente como variables de ejecución.
+
+## Supabase Storage
+
+La `SUPABASE_SERVICE_ROLE_KEY` solo se configura en el backend; nunca debe exponerse como variable `VITE_*`. Los valores predeterminados son `product-images` (público, solo imágenes) y `private-documents` (privado, solo PDF).
+
+Antes de migrar, revisar el inventario sin cambiar datos:
+
+```bash
+npm run storage:migrate
+```
+
+Con `DATABASE_URL`, `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` apuntando al proyecto correcto, ejecutar:
+
+```bash
+npm run storage:migrate -- --execute
+```
+
+El proceso crea o reutiliza ambos buckets, sube los archivos y actualiza las URLs de imágenes en `Product`. Los PDFs mantienen sus rutas históricas `/uploads/...`, que el backend resuelve contra el bucket privado. La migración es idempotente y conserva los archivos locales como respaldo; eliminarlos requiere una verificación posterior separada.
 
 ## Errores, logs y monitoreo
 

@@ -45,14 +45,23 @@ export class JsonLogger implements LoggerService {
     trace?: string,
   ) {
     if (PRIORITY[level] < this.minimum) return;
+    const serializedMessage =
+      message instanceof Error
+        ? {
+            error: {
+              name: message.name,
+              message: message.message,
+            },
+          }
+        : typeof message === 'object' && message !== null
+          ? { data: message }
+          : { message: String(message) };
     const record = {
       timestamp: new Date().toISOString(),
       level,
       service: process.env.SERVICE_NAME || 'ventas-backend',
       context,
-      ...(typeof message === 'object' && message !== null
-        ? { data: message }
-        : { message: String(message) }),
+      ...serializedMessage,
       ...(trace && process.env.NODE_ENV !== 'production' ? { trace } : {}),
     };
     const output = `${JSON.stringify(record)}\n`;

@@ -1,16 +1,16 @@
 jest.mock('puppeteer', () => ({
   launch: jest.fn(),
 }));
-jest.mock('fs', () => ({
-  existsSync: jest.fn().mockReturnValue(false),
-  mkdirSync: jest.fn(),
-  writeFileSync: jest.fn(),
-}));
-
 import { BadRequestException } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 
 describe('InventoryService', () => {
+  const storage: any = {
+    savePrivatePdf: jest.fn((_folder, filename) =>
+      Promise.resolve(`/uploads/reports/${filename}`),
+    ),
+  };
+
   it('agrupa el stock positivo del Almacén Central por proveedor y categoría', async () => {
     const prisma: any = {
       warehouse: {
@@ -57,7 +57,7 @@ describe('InventoryService', () => {
         }),
       },
     };
-    const service = new InventoryService(prisma);
+    const service = new InventoryService(prisma, storage);
 
     const inventory = await service.getInventory();
 
@@ -95,7 +95,7 @@ describe('InventoryService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
       },
     };
-    const service = new InventoryService(prisma);
+    const service = new InventoryService(prisma, storage);
 
     await expect(service.getInventory()).rejects.toBeInstanceOf(
       BadRequestException,
@@ -129,7 +129,7 @@ describe('InventoryService', () => {
         create: jest.fn().mockResolvedValue({ id: 'history_123' }),
       },
     };
-    const service = new InventoryService(prisma);
+    const service = new InventoryService(prisma, storage);
 
     const result = await service.generateInventoryPDF(7);
 

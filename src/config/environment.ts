@@ -1,4 +1,5 @@
-const PLACEHOLDER_PATTERN = /reemplazar|change[-_ ]?me|ci-only|example|secret/i;
+const PLACEHOLDER_PATTERN =
+  /reemplazar|change[-_ ]?me|ci-only|example|^(?:secret|password)(?:[-_ ].*)?$/i;
 
 function required(config: Record<string, unknown>, name: string): string {
   const raw = config[name];
@@ -81,6 +82,53 @@ export function validateEnvironment(
     throw new Error('NODE_ENV debe ser development, test o production');
   }
   const production = nodeEnv === 'production';
+  const storageDriver = optionalString(
+    config.STORAGE_DRIVER,
+    'STORAGE_DRIVER',
+    production ? 'supabase' : 'local',
+  );
+  if (!['local', 'supabase'].includes(storageDriver)) {
+    throw new Error('STORAGE_DRIVER debe ser local o supabase');
+  }
+
+  let supabaseUrl = optionalString(config.SUPABASE_URL, 'SUPABASE_URL', '');
+  let supabaseServiceRoleKey = optionalString(
+    config.SUPABASE_SERVICE_ROLE_KEY,
+    'SUPABASE_SERVICE_ROLE_KEY',
+    '',
+  );
+  if (storageDriver === 'supabase') {
+    supabaseUrl = absoluteUrl(
+      required(config, 'SUPABASE_URL'),
+      'SUPABASE_URL',
+      production,
+    );
+    supabaseServiceRoleKey = production
+      ? secureSecret(config, 'SUPABASE_SERVICE_ROLE_KEY')
+      : required(config, 'SUPABASE_SERVICE_ROLE_KEY');
+  }
+
+  const privateBucket = optionalString(
+    config.SUPABASE_PRIVATE_BUCKET,
+    'SUPABASE_PRIVATE_BUCKET',
+    'private-documents',
+  );
+  const publicBucket = optionalString(
+    config.SUPABASE_PUBLIC_BUCKET,
+    'SUPABASE_PUBLIC_BUCKET',
+    'product-images',
+  );
+  for (const [name, value] of [
+    ['SUPABASE_PRIVATE_BUCKET', privateBucket],
+    ['SUPABASE_PUBLIC_BUCKET', publicBucket],
+  ]) {
+    if (!/^[a-z0-9][a-z0-9._-]{1,62}$/.test(value)) {
+      throw new Error(`${name} no contiene un nombre de bucket válido`);
+    }
+  }
+  if (privateBucket === publicBucket) {
+    throw new Error('Los buckets público y privado deben ser diferentes');
+  }
 
   const databaseUrl = required(config, 'DATABASE_URL');
   let database: URL;
@@ -156,6 +204,11 @@ export function validateEnvironment(
     NODE_ENV: nodeEnv,
     PORT: positiveInteger(config.PORT, 'PORT', 3000),
     DATABASE_URL: databaseUrl,
+    STORAGE_DRIVER: storageDriver,
+    SUPABASE_URL: supabaseUrl,
+    SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
+    SUPABASE_PRIVATE_BUCKET: privateBucket,
+    SUPABASE_PUBLIC_BUCKET: publicBucket,
     JWT_SECRET: jwtSecret,
     TWO_FACTOR_ENCRYPTION_KEY: encryptionKey,
     FRONTEND_URL: frontendUrl,

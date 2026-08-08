@@ -30,6 +30,7 @@ export async function renderPdf(
     const puppeteer = require('puppeteer') as typeof import('puppeteer');
     browser = await puppeteer.launch({
       headless: true,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
       userDataDir: profileDirectory,
       args: [
         '--no-sandbox',
