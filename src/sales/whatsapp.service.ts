@@ -17,6 +17,7 @@ interface WhatsAppConfiguration {
   graphApiVersion: string;
   templateName: string;
   templateLanguage: string;
+  requestTimeoutMs: number;
 }
 
 interface MetaApiResponse {
@@ -95,6 +96,8 @@ export class WhatsAppService {
         'nota_venta_pdf',
       templateLanguage:
         this.configService.get<string>('WHATSAPP_TEMPLATE_LANGUAGE') || 'es',
+      requestTimeoutMs:
+        this.configService.get<number>('WHATSAPP_REQUEST_TIMEOUT_MS') || 15000,
     };
   }
 
@@ -137,6 +140,7 @@ export class WhatsAppService {
           Authorization: `Bearer ${configuration.accessToken}`,
         },
         body: formData,
+        signal: AbortSignal.timeout(configuration.requestTimeoutMs),
       },
     );
     const data = await this.readMetaResponse(response);
@@ -210,6 +214,7 @@ export class WhatsAppService {
             ],
           },
         }),
+        signal: AbortSignal.timeout(configuration.requestTimeoutMs),
       },
     );
     const data = await this.readMetaResponse(response);

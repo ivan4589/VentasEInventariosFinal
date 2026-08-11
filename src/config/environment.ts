@@ -199,6 +199,81 @@ export function validateEnvironment(
     throw new Error('LOG_LEVEL debe ser debug, info, warn o error');
   }
 
+  const whatsappAccessToken = optionalString(
+    config.WHATSAPP_ACCESS_TOKEN,
+    'WHATSAPP_ACCESS_TOKEN',
+    '',
+  );
+  const whatsappPhoneNumberId = optionalString(
+    config.WHATSAPP_PHONE_NUMBER_ID,
+    'WHATSAPP_PHONE_NUMBER_ID',
+    '',
+  );
+  if (Boolean(whatsappAccessToken) !== Boolean(whatsappPhoneNumberId)) {
+    throw new Error(
+      'WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID deben configurarse juntos',
+    );
+  }
+  if (whatsappPhoneNumberId && !/^\d+$/.test(whatsappPhoneNumberId)) {
+    throw new Error('WHATSAPP_PHONE_NUMBER_ID debe contener solo dígitos');
+  }
+
+  const whatsappGraphApiVersion = optionalString(
+    config.WHATSAPP_GRAPH_API_VERSION,
+    'WHATSAPP_GRAPH_API_VERSION',
+    'v25.0',
+  );
+  if (!/^v\d+\.\d+$/.test(whatsappGraphApiVersion)) {
+    throw new Error('WHATSAPP_GRAPH_API_VERSION debe tener formato vN.N');
+  }
+
+  const whatsappTemplateName = optionalString(
+    config.WHATSAPP_TEMPLATE_NAME,
+    'WHATSAPP_TEMPLATE_NAME',
+    'nota_venta_pdf',
+  );
+  if (!/^[a-z0-9_]+$/.test(whatsappTemplateName)) {
+    throw new Error(
+      'WHATSAPP_TEMPLATE_NAME solo admite minúsculas, números y guiones bajos',
+    );
+  }
+
+  const whatsappTemplateLanguage = optionalString(
+    config.WHATSAPP_TEMPLATE_LANGUAGE,
+    'WHATSAPP_TEMPLATE_LANGUAGE',
+    'es',
+  );
+  if (!/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(whatsappTemplateLanguage)) {
+    throw new Error('WHATSAPP_TEMPLATE_LANGUAGE no es un código válido');
+  }
+
+  const whatsappCountryCode = optionalString(
+    config.WHATSAPP_DEFAULT_COUNTRY_CODE,
+    'WHATSAPP_DEFAULT_COUNTRY_CODE',
+    '591',
+  );
+  if (!/^\d{1,4}$/.test(whatsappCountryCode)) {
+    throw new Error(
+      'WHATSAPP_DEFAULT_COUNTRY_CODE debe contener entre 1 y 4 dígitos',
+    );
+  }
+
+  const whatsappVerifyToken = optionalString(
+    config.WHATSAPP_VERIFY_TOKEN,
+    'WHATSAPP_VERIFY_TOKEN',
+    '',
+  );
+  const whatsappAppSecret = optionalString(
+    config.WHATSAPP_APP_SECRET,
+    'WHATSAPP_APP_SECRET',
+    '',
+  );
+  if (Boolean(whatsappVerifyToken) !== Boolean(whatsappAppSecret)) {
+    throw new Error(
+      'WHATSAPP_VERIFY_TOKEN y WHATSAPP_APP_SECRET deben configurarse juntos',
+    );
+  }
+
   return {
     ...config,
     NODE_ENV: nodeEnv,
@@ -219,6 +294,19 @@ export function validateEnvironment(
       booleanValue(config.TRUST_PROXY, 'TRUST_PROXY', production),
     ),
     LOG_LEVEL: logLevel,
+    WHATSAPP_ACCESS_TOKEN: whatsappAccessToken,
+    WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId,
+    WHATSAPP_GRAPH_API_VERSION: whatsappGraphApiVersion,
+    WHATSAPP_TEMPLATE_NAME: whatsappTemplateName,
+    WHATSAPP_TEMPLATE_LANGUAGE: whatsappTemplateLanguage,
+    WHATSAPP_DEFAULT_COUNTRY_CODE: whatsappCountryCode,
+    WHATSAPP_REQUEST_TIMEOUT_MS: positiveInteger(
+      config.WHATSAPP_REQUEST_TIMEOUT_MS,
+      'WHATSAPP_REQUEST_TIMEOUT_MS',
+      15000,
+    ),
+    WHATSAPP_VERIFY_TOKEN: whatsappVerifyToken,
+    WHATSAPP_APP_SECRET: whatsappAppSecret,
     BACKUP_RETENTION_DAYS: positiveInteger(
       config.BACKUP_RETENTION_DAYS,
       'BACKUP_RETENTION_DAYS',
