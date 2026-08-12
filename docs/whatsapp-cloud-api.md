@@ -39,6 +39,9 @@ WHATSAPP_GRAPH_API_VERSION="v25.0"
 WHATSAPP_TEMPLATE_NAME="nota_venta_pdf"
 WHATSAPP_TEMPLATE_LANGUAGE="es"
 WHATSAPP_DEFAULT_COUNTRY_CODE="591"
+WHATSAPP_REQUEST_TIMEOUT_MS="15000"
+WHATSAPP_VERIFY_TOKEN="valor-privado-generado-por-el-equipo"
+WHATSAPP_APP_SECRET="secreto-de-la-aplicacion-meta"
 ```
 
 No uses el App ID, el WhatsApp Business Account ID ni el número telefónico en
@@ -46,6 +49,11 @@ No uses el App ID, el WhatsApp Business Account ID ni el número telefónico en
 configuración de la API.
 
 No agregues estas variables al frontend ni publiques el `.env`.
+
+El token de verificación y el secreto de la aplicación se usan para validar
+los webhooks de Meta. El backend rechaza webhooks sin firma válida y no
+registra el contenido completo del evento para evitar exponer datos de los
+clientes en los logs.
 
 ## 3. Migración
 
@@ -80,7 +88,8 @@ La autorización comienza desmarcada para todos los clientes actuales.
    reenviar.
 
 Cada intento queda registrado con la venta, el usuario, el número normalizado,
-el resultado, el identificador de Meta y el error cuando corresponda.
+el identificador de Meta y su estado: enviado, entregado, leído o fallido.
+Los webhooks firmados actualizan el estado sin guardar el contenido del mensaje.
 
 ## 6. Diagnóstico
 

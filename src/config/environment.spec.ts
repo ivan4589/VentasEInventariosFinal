@@ -55,4 +55,29 @@ describe('production environment validation', () => {
       }),
     ).toThrow('HTTPS');
   });
+
+  it('normaliza la configuracion de WhatsApp', () => {
+    const config = validateEnvironment({
+      ...base,
+      WHATSAPP_ACCESS_TOKEN: 'test-token',
+      WHATSAPP_PHONE_NUMBER_ID: '1216396944894387',
+      WHATSAPP_GRAPH_API_VERSION: 'v25.0',
+      WHATSAPP_TEMPLATE_NAME: 'nota_venta_pdf',
+      WHATSAPP_TEMPLATE_LANGUAGE: 'es',
+      WHATSAPP_DEFAULT_COUNTRY_CODE: '591',
+      WHATSAPP_REQUEST_TIMEOUT_MS: '20000',
+    });
+
+    expect(config.WHATSAPP_PHONE_NUMBER_ID).toBe('1216396944894387');
+    expect(config.WHATSAPP_REQUEST_TIMEOUT_MS).toBe(20000);
+  });
+
+  it('rechaza una configuracion incompleta de WhatsApp', () => {
+    expect(() =>
+      validateEnvironment({
+        ...base,
+        WHATSAPP_ACCESS_TOKEN: 'test-token',
+      }),
+    ).toThrow('WHATSAPP_PHONE_NUMBER_ID');
+  });
 });

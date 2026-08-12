@@ -225,8 +225,8 @@ export class SalesService {
     const lastSuccessfulWhatsAppLog =
       sale.whatsappLogs?.find(
         (log: any) =>
-          log.status ===
-          $Enums.WhatsAppSendStatus.SENT,
+          log.status !==
+          $Enums.WhatsAppSendStatus.FAILED,
       );
 
     return {
@@ -269,6 +269,7 @@ export class SalesService {
         lastSuccessfulWhatsAppLog?.createdAt,
       whatsappMessageId:
         lastSuccessfulWhatsAppLog?.metaMessageId,
+      whatsappStatus: lastWhatsAppLog?.status,
       whatsappLastError:
         lastWhatsAppLog?.status ===
         $Enums.WhatsAppSendStatus.FAILED

@@ -44,6 +44,7 @@ export class SaleResponseDto {
   cancelledPdfUrl?: string;
   whatsappLastSentAt?: Date;
   whatsappMessageId?: string;
+  whatsappStatus?: $Enums.WhatsAppSendStatus;
   whatsappLastError?: string;
 
   details: SaleDetailResponseDto[];

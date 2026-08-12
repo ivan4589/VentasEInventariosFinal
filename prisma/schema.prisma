@@ -495,6 +495,8 @@ model Sale {
 
 enum WhatsAppSendStatus {
   SENT
+  DELIVERED
+  READ
   FAILED
 }
 
@@ -513,6 +515,7 @@ model SaleWhatsAppLog {
   @@index([saleId])
   @@index([userId])
   @@index([status])
+  @@index([metaMessageId])
   @@index([createdAt])
   @@map("sale_whatsapp_logs")
 }
