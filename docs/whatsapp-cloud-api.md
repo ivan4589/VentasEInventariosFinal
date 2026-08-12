@@ -88,7 +88,8 @@ La autorización comienza desmarcada para todos los clientes actuales.
    reenviar.
 
 Cada intento queda registrado con la venta, el usuario, el número normalizado,
-el resultado, el identificador de Meta y el error cuando corresponda.
+el identificador de Meta y su estado: enviado, entregado, leído o fallido.
+Los webhooks firmados actualizan el estado sin guardar el contenido del mensaje.
 
 ## 6. Diagnóstico
 

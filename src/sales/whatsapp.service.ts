@@ -255,7 +255,13 @@ export class WhatsAppService {
         client: true,
         whatsappLogs: {
           where: {
-            status: WhatsAppSendStatus.SENT,
+            status: {
+              in: [
+                WhatsAppSendStatus.SENT,
+                WhatsAppSendStatus.DELIVERED,
+                WhatsAppSendStatus.READ,
+              ],
+            },
           },
           orderBy: {
             createdAt: 'desc',

@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'crypto';
 import type { Request } from 'express';
+import { WhatsappWebhookService } from './whatsapp-webhook.service';
 import { WhatsappController } from './whatsapp.controller';
 
 describe('WhatsappController', () => {
@@ -16,7 +17,10 @@ describe('WhatsappController', () => {
   const config = {
     get: jest.fn((key: string) => values[key]),
   } as unknown as ConfigService;
-  const controller = new WhatsappController(config);
+  const webhookService = {
+    process: jest.fn().mockResolvedValue(0),
+  } as unknown as WhatsappWebhookService;
+  const controller = new WhatsappController(config, webhookService);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -38,25 +42,28 @@ describe('WhatsappController', () => {
     ).toThrow(ServiceUnavailableException);
   });
 
-  it('rechaza webhooks sin una firma válida de Meta', () => {
+  it('rechaza webhooks sin una firma válida de Meta', async () => {
     const request = {
       rawBody: Buffer.from('{"entry":[]}'),
     } as RawBodyRequest<Request>;
 
-    expect(() =>
+    await expect(
       controller.receiveWebhook(request, 'sha256=incorrecta', {}),
-    ).toThrow(ForbiddenException);
+    ).rejects.toThrow(ForbiddenException);
   });
 
-  it('acepta un webhook firmado sin registrar el contenido sensible', () => {
+  it('acepta un webhook firmado y procesa sus estados', async () => {
     const rawBody = Buffer.from('{"entry":[]}');
     const signature = `sha256=${createHmac('sha256', values.WHATSAPP_APP_SECRET)
       .update(rawBody)
       .digest('hex')}`;
     const request = { rawBody } as RawBodyRequest<Request>;
 
-    expect(controller.receiveWebhook(request, signature, {})).toEqual({
-      received: true,
-    });
+    const payload = { entry: [] };
+
+    await expect(
+      controller.receiveWebhook(request, signature, payload),
+    ).resolves.toEqual({ received: true });
+    expect(webhookService.process).toHaveBeenCalledWith(payload);
   });
 });

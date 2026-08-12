@@ -14,10 +14,14 @@ import type { RawBodyRequest } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
 import type { Request } from 'express';
+import { WhatsappWebhookService } from './whatsapp-webhook.service';
 
 @Controller('whatsapp')
 export class WhatsappController {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly webhookService: WhatsappWebhookService,
+  ) {}
 
   private sameSecret(received: string, expected: string): boolean {
     const receivedBuffer = Buffer.from(received);
@@ -58,11 +62,11 @@ export class WhatsappController {
 
   @Post('webhook')
   @HttpCode(200)
-  receiveWebhook(
+  async receiveWebhook(
     @Req() request: RawBodyRequest<Request>,
     @Headers('x-hub-signature-256') signature: string | undefined,
-    @Body() _payload: unknown,
-  ) {
+    @Body() payload: unknown,
+  ): Promise<{ received: true }> {
     const appSecret = this.config.get<string>('WHATSAPP_APP_SECRET')?.trim();
 
     if (!appSecret) {
@@ -82,6 +86,8 @@ export class WhatsappController {
     if (!this.sameSecret(signature, expectedSignature)) {
       throw new ForbiddenException('Firma de webhook incorrecta');
     }
+
+    await this.webhookService.process(payload);
 
     return {
       received: true,

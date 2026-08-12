@@ -145,6 +145,7 @@ export class DataScopeService {
       delete sanitized.cancelledPdfUrl;
       delete sanitized.whatsappLastSentAt;
       delete sanitized.whatsappMessageId;
+      delete sanitized.whatsappStatus;
       delete sanitized.whatsappLastError;
       delete sanitized.clientWhatsAppConsent;
     }
