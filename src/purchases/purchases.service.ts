@@ -103,8 +103,7 @@ export class PurchasesService {
     });
 
     const totalQuantity = receivedDetails.reduce(
-      (sum: number, detail: { quantity: number }) =>
-        sum + detail.quantity,
+      (sum: number, detail: { quantity: number }) => sum + detail.quantity,
       0,
     );
 
@@ -128,9 +127,7 @@ export class PurchasesService {
         id: productId,
       },
       data: {
-        purchasePrice: this.roundMoney(
-          totalValue / totalQuantity,
-        ),
+        purchasePrice: this.roundMoney(totalValue / totalQuantity),
       },
     });
   }
@@ -223,7 +220,9 @@ export class PurchasesService {
     });
 
     if (products.length !== productIds.length) {
-      throw new BadRequestException('Uno o más productos no existen o están desactivados');
+      throw new BadRequestException(
+        'Uno o más productos no existen o están desactivados',
+      );
     }
 
     const productMap = new Map(
@@ -305,12 +304,6 @@ export class PurchasesService {
         detail.minQuantityWholesale !== null &&
         detail.minQuantityWholesale !== undefined;
 
-      if (hasWholesalePrice !== hasWholesaleMinimum) {
-        throw new BadRequestException(
-          `El producto "${product.name}" debe tener precio y cantidad mÃ­nima mayorista, o dejar ambos vacÃ­os`,
-        );
-      }
-
       const requestedDistributions = detail.warehouseDistributions?.length
         ? detail.warehouseDistributions
         : [
@@ -369,8 +362,8 @@ export class PurchasesService {
         subtotal,
         pricingConfigured: true,
         priceNormal: this.roundMoney(detail.priceNormal),
-        priceCamino: this.roundMoney(detail.priceCamino),
-        priceEspecial: this.roundMoney(detail.priceEspecial),
+        priceCamino: this.roundMoney(detail.priceCamino ?? 0),
+        priceEspecial: this.roundMoney(detail.priceEspecial ?? 0),
         priceMayorista: hasWholesalePrice
           ? this.roundMoney(detail.priceMayorista!)
           : null,
@@ -859,17 +852,12 @@ export class PurchasesService {
 
       for (const detail of group.details) {
         const product = detail.product;
-        const previousStockValue =
-          product.stock * product.purchasePrice;
-        const receivedStockValue =
-          detail.quantity * detail.unitPrice;
-        const stockAfterReceipt =
-          product.stock + detail.quantity;
+        const previousStockValue = product.stock * product.purchasePrice;
+        const receivedStockValue = detail.quantity * detail.unitPrice;
+        const stockAfterReceipt = product.stock + detail.quantity;
         const newPurchasePrice = this.roundMoney(
           stockAfterReceipt > 0
-            ? (previousStockValue +
-                receivedStockValue) /
-                stockAfterReceipt
+            ? (previousStockValue + receivedStockValue) / stockAfterReceipt
             : detail.unitPrice,
         );
         const warehouseDistributions =
@@ -1070,14 +1058,9 @@ export class PurchasesService {
       });
 
       for (const productId of new Set(
-        group.details.map(
-          (detail) => detail.productId,
-        ),
+        group.details.map((detail) => detail.productId),
       )) {
-        await this.recalculateWeightedPurchasePrice(
-          prisma,
-          productId,
-        );
+        await this.recalculateWeightedPurchasePrice(prisma, productId);
       }
 
       return this.synchronizePurchase(prisma, purchaseId);
@@ -1190,14 +1173,9 @@ export class PurchasesService {
       });
 
       for (const productId of new Set(
-        receivedDetails.map(
-          (detail) => detail.productId,
-        ),
+        receivedDetails.map((detail) => detail.productId),
       )) {
-        await this.recalculateWeightedPurchasePrice(
-          prisma,
-          productId,
-        );
+        await this.recalculateWeightedPurchasePrice(prisma, productId);
       }
 
       await prisma.purchase.update({

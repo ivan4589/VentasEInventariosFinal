@@ -130,4 +130,56 @@ describe('PurchasesService', () => {
 
     expect(prisma.purchase.create).not.toHaveBeenCalled();
   });
+
+  it.each([
+    {
+      name: 'en cero',
+      detail: {
+        priceCamino: 0,
+        priceEspecial: 0,
+        priceMayorista: 0,
+        minQuantityWholesale: 0,
+      },
+      expected: {
+        priceCamino: 0,
+        priceEspecial: 0,
+        priceMayorista: 0,
+        minQuantityWholesale: 0,
+      },
+    },
+    {
+      name: 'vacíos',
+      detail: {
+        priceCamino: undefined,
+        priceEspecial: undefined,
+        priceMayorista: undefined,
+        minQuantityWholesale: undefined,
+      },
+      expected: {
+        priceCamino: 0,
+        priceEspecial: 0,
+        priceMayorista: null,
+        minQuantityWholesale: null,
+      },
+    },
+  ])('acepta los precios opcionales $name', async ({ detail, expected }) => {
+    const { service, prisma } = createService();
+
+    await service.create(
+      {
+        details: [
+          {
+            ...baseDetail,
+            ...detail,
+          },
+        ],
+      },
+      1,
+    );
+
+    const createData = prisma.purchase.create.mock.calls[0][0].data;
+    const savedDetail = createData.providerGroups.create[0].details.create[0];
+
+    expect(savedDetail).toEqual(expect.objectContaining(expected));
+  });
 });
