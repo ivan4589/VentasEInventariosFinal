@@ -27,18 +27,20 @@ export class PurchaseDetailDto {
 
   @Type(() => Number)
   @IsNumber()
-  @Min(0)
+  @IsPositive()
   priceNormal: number;
 
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  priceCamino: number;
+  priceCamino?: number | null;
 
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  priceEspecial: number;
+  priceEspecial?: number | null;
 
   @IsOptional()
   @Type(() => Number)
@@ -49,7 +51,7 @@ export class PurchaseDetailDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   minQuantityWholesale?: number | null;
 
   @IsOptional()
