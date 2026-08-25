@@ -47,6 +47,7 @@ jobs:
             src/auth/auth.controller.spec.ts \
             src/economic-integrity/economic-integrity.spec.ts \
             src/reports/report-range.spec.ts \
+            src/reports/reports.service.spec.ts \
             src/payments/payments.service.spec.ts \
             src/warehouse-transfers/warehouse-transfers.service.spec.ts \
             src/sales/sales.service.spec.ts \
