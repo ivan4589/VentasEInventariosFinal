@@ -32,16 +32,41 @@ export class ReportsService {
       return this.saleLogoDataUri;
     }
 
-    const logoPath = join(
-      __dirname,
-      '..',
-      'assets',
-      'logo-yungas.jpeg',
+    const possibleLogoPaths = [
+      join(
+        __dirname,
+        '..',
+        'assets',
+        'logo-yungas.jpeg',
+      ),
+      join(
+        process.cwd(),
+        'dist',
+        'assets',
+        'logo-yungas.jpeg',
+      ),
+      join(
+        process.cwd(),
+        'dist',
+        'src',
+        'assets',
+        'logo-yungas.jpeg',
+      ),
+      join(
+        process.cwd(),
+        'src',
+        'assets',
+        'logo-yungas.jpeg',
+      ),
+    ];
+
+    const logoPath = possibleLogoPaths.find(
+      (candidate) => existsSync(candidate),
     );
 
-    if (!existsSync(logoPath)) {
+    if (!logoPath) {
       throw new Error(
-        'No se encontró el logo corporativo para generar la nota de venta',
+        `No se encontró el logo corporativo. Rutas revisadas: ${possibleLogoPaths.join(', ')}`,
       );
     }
 
@@ -341,23 +366,22 @@ export class ReportsService {
               ${this.escapeHtml(detail.product.name)}
             </td>
             <td class="quantity">${detail.quantity}</td>
-            <td class="number">${detail.unitPrice.toFixed(2)} Bs.</td>
-            <td class="number subtotal">${detail.subtotal.toFixed(2)} Bs.</td>
+            <td class="number">${detail.unitPrice.toFixed(2)}</td>
+            <td class="number subtotal">${detail.subtotal.toFixed(2)}</td>
           </tr>
         `,
       )
       .join('');
 
-    const saleDate = new Date(sale.date).toLocaleString('es-BO');
-    const generatedAt = new Date().toLocaleString('es-BO');
+    const saleDate = new Date(sale.date).toLocaleDateString('es-BO');
     const logoDataUri = this.getSaleLogoDataUri();
-    const cancellationBanner = isCancelled
-      ? '<div class="cancelled-banner">VENTA ANULADA</div>'
+    const statusBadge = isCancelled
+      ? '<span class="status-badge cancelled">ANULADA</span>'
       : '';
     const observations = sale.observations
       ? `
           <section class="observations">
-            <span>Observaciones</span>
+            <span class="field-label">Observaciones</span>
             <p>${this.escapeHtml(sale.observations)}</p>
           </section>
         `
@@ -374,23 +398,22 @@ export class ReportsService {
             }
 
             :root {
+              --ink: #0b0f14;
+              --muted: #52606d;
+              --line: #c8ced6;
+              --line-dark: #87919d;
+              --surface: #f4f6f8;
               --navy: #123a56;
-              --navy-dark: #0b2b42;
               --teal: #267f72;
-              --teal-soft: #e8f4f1;
-              --ink: #1f2937;
-              --muted: #64748b;
-              --line: #d9e2e8;
-              --surface: #f5f8fa;
               --danger: #b42318;
             }
 
             body {
               margin: 0;
-              padding: 18px;
+              padding: 10px 14px;
               color: var(--ink);
               font-family: Arial, Helvetica, sans-serif;
-              font-size: 12px;
+              font-size: 11px;
               background: #ffffff;
             }
 
@@ -398,107 +421,110 @@ export class ReportsService {
               width: 100%;
             }
 
-            .brand-header {
+            .invoice-header {
               display: flex;
-              align-items: center;
-              gap: 24px;
-              min-height: 122px;
-              padding: 4px 0 18px;
-              border-bottom: 4px solid var(--teal);
+              align-items: flex-start;
+              justify-content: space-between;
+              min-height: 92px;
+              padding: 4px 0 14px;
+            }
+
+            .title-block {
+              padding-top: 4px;
+            }
+
+            .title-block h1 {
+              margin: 0;
+              color: #000000;
+              font-size: 27px;
+              line-height: 1.05;
+              letter-spacing: -0.4px;
+            }
+
+            .title-block p {
+              margin: 8px 0 0;
+              color: var(--navy);
+              font-size: 11px;
+              font-weight: 500;
+            }
+
+            .brand-block {
+              display: flex;
+              align-items: flex-start;
+              gap: 12px;
             }
 
             .brand-logo {
-              width: 142px;
-              height: 112px;
+              width: 108px;
+              height: 82px;
               object-fit: contain;
             }
 
-            .document-heading {
-              flex: 1;
-              text-align: right;
-            }
-
-            .document-heading .eyebrow {
-              margin: 0 0 6px;
-              color: var(--teal);
-              font-size: 11px;
-              font-weight: 700;
-              letter-spacing: 1.4px;
-              text-transform: uppercase;
-            }
-
-            .document-heading h1 {
-              margin: 0;
-              color: var(--navy);
-              font-size: 30px;
-              line-height: 1.05;
-              letter-spacing: 0.5px;
-            }
-
-            .sale-number {
+            .status-badge {
               display: inline-block;
-              margin-top: 12px;
-              padding: 7px 12px;
-              border-radius: 5px;
-              color: #ffffff;
-              background: var(--navy);
-              font-size: 14px;
-              font-weight: 700;
-            }
-
-            .cancelled-banner {
-              margin-top: 14px;
-              padding: 9px 12px;
-              border: 2px solid var(--danger);
-              border-radius: 5px;
-              color: var(--danger);
-              background: #fff1f0;
-              font-size: 16px;
-              font-weight: 800;
-              text-align: center;
-              letter-spacing: 2px;
-            }
-
-            .client-grid {
-              display: grid;
-              grid-template-columns: 1.45fr 1fr 1.1fr;
-              gap: 10px;
-              margin: 18px 0;
-            }
-
-            .info-card {
-              min-height: 67px;
-              padding: 12px 14px;
-              border: 1px solid var(--line);
-              border-left: 4px solid var(--teal);
-              border-radius: 5px;
-              background: var(--surface);
-            }
-
-            .info-label {
-              display: block;
-              margin-bottom: 6px;
-              color: var(--muted);
+              margin-top: 2px;
+              padding: 5px 8px;
+              border-radius: 2px;
               font-size: 9px;
               font-weight: 700;
-              letter-spacing: 0.8px;
-              text-transform: uppercase;
+              letter-spacing: 0.7px;
             }
 
-            .info-value {
-              color: var(--navy-dark);
-              font-size: 13px;
-              font-weight: 700;
+            .status-badge.cancelled {
+              color: var(--danger);
+              background: #feeceb;
+            }
+
+            .header-line {
+              height: 1px;
+              margin-bottom: 18px;
+              background: var(--line);
+            }
+
+            .sale-data {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              column-gap: 26px;
+              row-gap: 17px;
+              margin-bottom: 25px;
+            }
+
+            .field {
+              min-height: 42px;
+              padding-bottom: 7px;
+              border-bottom: 1px solid var(--line-dark);
+            }
+
+            .field-label {
+              display: block;
+              margin-bottom: 8px;
+              color: var(--navy);
+              font-size: 9px;
+              font-weight: 600;
+              letter-spacing: 0.45px;
+            }
+
+            .field-value {
+              display: block;
+              color: var(--ink);
+              font-size: 12px;
+              font-weight: 500;
               overflow-wrap: anywhere;
+            }
+
+            .section-title {
+              margin: 0 0 9px;
+              color: var(--ink);
+              font-size: 12px;
+              font-weight: 700;
+              letter-spacing: 0.5px;
+              text-transform: uppercase;
             }
 
             table {
               width: 100%;
-              border-collapse: separate;
-              border-spacing: 0;
-              overflow: hidden;
-              border: 1px solid var(--line);
-              border-radius: 6px;
+              border-collapse: collapse;
+              margin: 0;
             }
 
             thead {
@@ -510,28 +536,27 @@ export class ReportsService {
             }
 
             th {
-              padding: 11px 9px;
-              color: #ffffff;
-              background: var(--navy);
-              font-size: 10px;
+              padding: 9px 8px;
+              border-top: 1px solid var(--line-dark);
+              border-bottom: 1px solid var(--line-dark);
+              color: var(--muted);
+              background: var(--surface);
+              font-size: 9px;
+              font-weight: 700;
               letter-spacing: 0.35px;
               text-align: left;
               text-transform: uppercase;
             }
 
             td {
-              padding: 10px 9px;
-              border-top: 1px solid var(--line);
-              font-size: 11px;
+              padding: 10px 8px;
+              border-bottom: 1px solid #e3e7eb;
+              font-size: 10.5px;
               vertical-align: middle;
             }
 
-            tbody tr:first-child td {
-              border-top: 0;
-            }
-
             tbody tr:nth-child(even) {
-              background: #f8fafc;
+              background: #fafbfc;
             }
 
             .item-number {
@@ -542,8 +567,7 @@ export class ReportsService {
 
             .product-name {
               width: 45%;
-              color: var(--navy-dark);
-              font-weight: 600;
+              font-weight: 500;
             }
 
             .quantity {
@@ -559,79 +583,72 @@ export class ReportsService {
             }
 
             .subtotal {
-              font-weight: 700;
+              font-weight: 600;
             }
 
             .totals-wrap {
               display: flex;
               justify-content: flex-end;
-              margin-top: 14px;
+              margin-top: 16px;
               page-break-inside: avoid;
             }
 
             .totals {
-              width: 330px;
-              overflow: hidden;
-              border: 1px solid var(--line);
-              border-radius: 6px;
+              width: 300px;
             }
 
             .total-row {
               display: flex;
               justify-content: space-between;
-              padding: 9px 13px;
+              padding: 7px 0;
               border-bottom: 1px solid var(--line);
             }
 
             .total-row span:first-child {
               color: var(--muted);
+              font-size: 10px;
             }
 
             .total-row span:last-child {
-              font-weight: 700;
+              color: var(--ink);
+              font-weight: 600;
             }
 
-            .total-row.grand-total {
-              padding: 13px;
+            .grand-total {
+              margin-top: 3px;
+              padding: 11px 0 8px;
+              border-top: 2px solid var(--ink);
               border-bottom: 0;
-              color: #ffffff;
-              background: var(--teal);
-              font-size: 18px;
+            }
+
+            .grand-total span:first-child,
+            .grand-total span:last-child {
+              color: var(--ink);
+              font-size: 17px;
               font-weight: 800;
             }
 
-            .total-row.grand-total span {
-              color: #ffffff;
-            }
-
             .observations {
-              margin-top: 16px;
-              padding: 12px 14px;
-              border: 1px solid var(--line);
-              border-radius: 5px;
-              background: var(--teal-soft);
+              margin-top: 22px;
+              padding: 0 0 9px;
+              border-bottom: 1px solid var(--line-dark);
               page-break-inside: avoid;
             }
 
-            .observations span {
-              color: var(--teal);
-              font-size: 10px;
-              font-weight: 700;
-              letter-spacing: 0.7px;
-              text-transform: uppercase;
-            }
-
             .observations p {
-              margin: 6px 0 0;
+              margin: 0;
+              color: var(--ink);
+              font-size: 10.5px;
+              line-height: 1.5;
               white-space: pre-wrap;
             }
 
             .footer {
-              margin-top: 26px;
-              padding-top: 12px;
+              margin-top: 30px;
+              padding-top: 11px;
               border-top: 1px solid var(--line);
               color: var(--muted);
-              font-size: 10px;
+              font-size: 9px;
               text-align: center;
             }
 
@@ -639,49 +656,62 @@ export class ReportsService {
               display: block;
               margin-bottom: 4px;
               color: var(--navy);
-              font-size: 12px;
+              font-size: 10px;
             }
           </style>
         </head>
 
         <body>
           <main class="document">
-            <header class="brand-header">
-              <img
-                class="brand-logo"
-                src="${logoDataUri}"
-                alt="Yungas Distribuidora"
-              />
-
-              <div class="document-heading">
-                <p class="eyebrow">Comprobante para el cliente</p>
+            <header class="invoice-header">
+              <div class="title-block">
                 <h1>${isCancelled ? 'NOTA DE VENTA ANULADA' : 'NOTA DE VENTA'}</h1>
-                <div class="sale-number">
-                  N.º ${this.escapeHtml(sale.saleNumber)}
-                </div>
+                <p>Yungas Distribuidora</p>
+              </div>
+
+              <div class="brand-block">
+                ${statusBadge}
+                <img
+                  class="brand-logo"
+                  src="${logoDataUri}"
+                  alt="Yungas Distribuidora"
+                />
               </div>
             </header>
 
-            ${cancellationBanner}
+            <div class="header-line"></div>
 
-            <section class="client-grid">
-              <div class="info-card">
-                <span class="info-label">Cliente</span>
-                <span class="info-value">${this.escapeHtml(sale.client.fullName)}</span>
-              </div>
-
-              <div class="info-card">
-                <span class="info-label">Localidad</span>
-                <span class="info-value">
-                  ${this.escapeHtml(sale.client.location?.name || '-')}
+            <section class="sale-data">
+              <div class="field">
+                <span class="field-label">Nro. de venta</span>
+                <span class="field-value">
+                  ${this.escapeHtml(sale.saleNumber)}
                 </span>
               </div>
 
-              <div class="info-card">
-                <span class="info-label">Fecha de venta</span>
-                <span class="info-value">${this.escapeHtml(saleDate)}</span>
+              <div class="field">
+                <span class="field-label">Fecha de emisión</span>
+                <span class="field-value">
+                  ${this.escapeHtml(saleDate)}
+                </span>
+              </div>
+
+              <div class="field">
+                <span class="field-label">Cliente</span>
+                <span class="field-value">
+                  ${this.escapeHtml(sale.client.fullName)}
+                </span>
+              </div>
+
+              <div class="field">
+                <span class="field-label">Localidad</span>
+                <span class="field-value">
+                  ${this.escapeHtml(sale.client.location?.name || '-')}
+                </span>
               </div>
             </section>
+
+            <h2 class="section-title">Detalle de productos</h2>
 
             <table>
               <thead>
@@ -689,8 +719,8 @@ export class ReportsService {
                   <th style="text-align:center;">N.º</th>
                   <th>Producto</th>
                   <th style="text-align:center;">Cantidad</th>
-                  <th style="text-align:right;">Precio unit.</th>
-                  <th style="text-align:right;">Subtotal</th>
+                  <th style="text-align:right;">Precio unit. (Bs.)</th>
+                  <th style="text-align:right;">Subtotal (Bs.)</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
@@ -707,7 +737,7 @@ export class ReportsService {
                   <span>${sale.discount.toFixed(2)} Bs.</span>
                 </div>
                 <div class="total-row grand-total">
-                  <span>TOTAL</span>
+                  <span>Total</span>
                   <span>${sale.total.toFixed(2)} Bs.</span>
                 </div>
               </div>
@@ -716,10 +746,8 @@ export class ReportsService {
             ${observations}
 
             <footer class="footer">
-              <strong>Gracias por confiar en Yungas Distribuidora</strong>
+              <strong>Yungas Distribuidora</strong>
               Logística de confianza · Yungas, La Paz - Bolivia
-              <br />
-              Documento generado: ${this.escapeHtml(generatedAt)}
             </footer>
           </main>
         </body>
