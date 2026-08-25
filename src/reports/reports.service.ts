@@ -32,16 +32,41 @@ export class ReportsService {
       return this.saleLogoDataUri;
     }
 
-    const logoPath = join(
-      __dirname,
-      '..',
-      'assets',
-      'logo-yungas.jpeg',
+    const possibleLogoPaths = [
+      join(
+        __dirname,
+        '..',
+        'assets',
+        'logo-yungas.jpeg',
+      ),
+      join(
+        process.cwd(),
+        'dist',
+        'assets',
+        'logo-yungas.jpeg',
+      ),
+      join(
+        process.cwd(),
+        'dist',
+        'src',
+        'assets',
+        'logo-yungas.jpeg',
+      ),
+      join(
+        process.cwd(),
+        'src',
+        'assets',
+        'logo-yungas.jpeg',
+      ),
+    ];
+
+    const logoPath = possibleLogoPaths.find(
+      (candidate) => existsSync(candidate),
     );
 
-    if (!existsSync(logoPath)) {
+    if (!logoPath) {
       throw new Error(
-        'No se encontró el logo corporativo para generar la nota de venta',
+        `No se encontró el logo corporativo. Rutas revisadas: ${possibleLogoPaths.join(', ')}`,
       );
     }
 
