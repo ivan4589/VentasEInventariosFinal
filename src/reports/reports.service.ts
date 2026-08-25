@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportHistoryService } from './report-history.service';
@@ -21,6 +23,33 @@ export class ReportsService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  private saleLogoDataUri?: string;
+
+  private getSaleLogoDataUri(): string {
+    if (this.saleLogoDataUri) {
+      return this.saleLogoDataUri;
+    }
+
+    const logoPath = join(
+      __dirname,
+      '..',
+      'assets',
+      'logo-yungas.jpeg',
+    );
+
+    if (!existsSync(logoPath)) {
+      throw new Error(
+        'No se encontró el logo corporativo para generar la nota de venta',
+      );
+    }
+
+    this.saleLogoDataUri = `data:image/jpeg;base64,${readFileSync(
+      logoPath,
+    ).toString('base64')}`;
+
+    return this.saleLogoDataUri;
   }
   async generatePurchasePDF(purchaseId: string): Promise<string> {
     const purchase = await this.prisma.purchase.findUnique({
@@ -291,7 +320,6 @@ export class ReportsService {
             location: true,
           },
         },
-        user: true,
         details: {
           include: {
             product: true,
@@ -304,49 +332,399 @@ export class ReportsService {
       throw new NotFoundException('Venta no encontrada');
     }
 
-    let rows = '';
+    const rows = sale.details
+      .map(
+        (detail, index) => `
+          <tr>
+            <td class="item-number">${index + 1}</td>
+            <td class="product-name">
+              ${this.escapeHtml(detail.product.name)}
+            </td>
+            <td class="quantity">${detail.quantity}</td>
+            <td class="number">${detail.unitPrice.toFixed(2)} Bs.</td>
+            <td class="number subtotal">${detail.subtotal.toFixed(2)} Bs.</td>
+          </tr>
+        `,
+      )
+      .join('');
 
-    for (const detail of sale.details) {
-      rows += `
-        <tr>
-          <td>${detail.product.name}</td>
-          <td style="text-align:center;">${detail.quantity}</td>
-          <td style="text-align:right;">${detail.unitPrice.toFixed(2)}</td>
-          <td style="text-align:right;">${detail.subtotal.toFixed(2)}</td>
-        </tr>
-      `;
-    }
+    const saleDate = new Date(sale.date).toLocaleString('es-BO');
+    const generatedAt = new Date().toLocaleString('es-BO');
+    const logoDataUri = this.getSaleLogoDataUri();
+    const cancellationBanner = isCancelled
+      ? '<div class="cancelled-banner">VENTA ANULADA</div>'
+      : '';
+    const observations = sale.observations
+      ? `
+          <section class="observations">
+            <span>Observaciones</span>
+            <p>${this.escapeHtml(sale.observations)}</p>
+          </section>
+        `
+      : '';
 
-    const html = this.buildDocumentHTML(
-      isCancelled ? 'NOTA DE VENTA ANULADA' : 'NOTA DE VENTA',
-      `
-        ${
-          isCancelled
-            ? '<p style="color:#b91c1c;font-size:18px;font-weight:bold;">VENTA ANULADA</p>'
-            : ''
-        }
-        <p><strong>N° Venta:</strong> ${sale.saleNumber}</p>
-        <p><strong>Cliente:</strong> ${sale.client.fullName}</p>
-        <p><strong>Localidad:</strong> ${sale.client.location?.name || '-'}</p>
-        <p><strong>Atendido por:</strong> ${sale.user.name}</p>
-        <p><strong>Fecha:</strong> ${new Date(sale.date).toLocaleString('es-BO')}</p>
-      `,
-      `
-        <table>
-          <thead>
-            <tr>
-              <th>Producto</th>
-              <th>Cantidad</th>
-              <th>Precio Unit.</th>
-              <th>Subtotal</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <p style="text-align:right;"><strong>Descuento:</strong> ${sale.discount.toFixed(2)} Bs.</p>
-        <div class="total">TOTAL: ${sale.total.toFixed(2)} Bs.</div>
-      `,
-    );
+    const html = `
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charset="UTF-8" />
+          <style>
+            * {
+              box-sizing: border-box;
+            }
+
+            :root {
+              --navy: #123a56;
+              --navy-dark: #0b2b42;
+              --teal: #267f72;
+              --teal-soft: #e8f4f1;
+              --ink: #1f2937;
+              --muted: #64748b;
+              --line: #d9e2e8;
+              --surface: #f5f8fa;
+              --danger: #b42318;
+            }
+
+            body {
+              margin: 0;
+              padding: 18px;
+              color: var(--ink);
+              font-family: Arial, Helvetica, sans-serif;
+              font-size: 12px;
+              background: #ffffff;
+            }
+
+            .document {
+              width: 100%;
+            }
+
+            .brand-header {
+              display: flex;
+              align-items: center;
+              gap: 24px;
+              min-height: 122px;
+              padding: 4px 0 18px;
+              border-bottom: 4px solid var(--teal);
+            }
+
+            .brand-logo {
+              width: 142px;
+              height: 112px;
+              object-fit: contain;
+            }
+
+            .document-heading {
+              flex: 1;
+              text-align: right;
+            }
+
+            .document-heading .eyebrow {
+              margin: 0 0 6px;
+              color: var(--teal);
+              font-size: 11px;
+              font-weight: 700;
+              letter-spacing: 1.4px;
+              text-transform: uppercase;
+            }
+
+            .document-heading h1 {
+              margin: 0;
+              color: var(--navy);
+              font-size: 30px;
+              line-height: 1.05;
+              letter-spacing: 0.5px;
+            }
+
+            .sale-number {
+              display: inline-block;
+              margin-top: 12px;
+              padding: 7px 12px;
+              border-radius: 5px;
+              color: #ffffff;
+              background: var(--navy);
+              font-size: 14px;
+              font-weight: 700;
+            }
+
+            .cancelled-banner {
+              margin-top: 14px;
+              padding: 9px 12px;
+              border: 2px solid var(--danger);
+              border-radius: 5px;
+              color: var(--danger);
+              background: #fff1f0;
+              font-size: 16px;
+              font-weight: 800;
+              text-align: center;
+              letter-spacing: 2px;
+            }
+
+            .client-grid {
+              display: grid;
+              grid-template-columns: 1.45fr 1fr 1.1fr;
+              gap: 10px;
+              margin: 18px 0;
+            }
+
+            .info-card {
+              min-height: 67px;
+              padding: 12px 14px;
+              border: 1px solid var(--line);
+              border-left: 4px solid var(--teal);
+              border-radius: 5px;
+              background: var(--surface);
+            }
+
+            .info-label {
+              display: block;
+              margin-bottom: 6px;
+              color: var(--muted);
+              font-size: 9px;
+              font-weight: 700;
+              letter-spacing: 0.8px;
+              text-transform: uppercase;
+            }
+
+            .info-value {
+              color: var(--navy-dark);
+              font-size: 13px;
+              font-weight: 700;
+              overflow-wrap: anywhere;
+            }
+
+            table {
+              width: 100%;
+              border-collapse: separate;
+              border-spacing: 0;
+              overflow: hidden;
+              border: 1px solid var(--line);
+              border-radius: 6px;
+            }
+
+            thead {
+              display: table-header-group;
+            }
+
+            tr {
+              page-break-inside: avoid;
+            }
+
+            th {
+              padding: 11px 9px;
+              color: #ffffff;
+              background: var(--navy);
+              font-size: 10px;
+              letter-spacing: 0.35px;
+              text-align: left;
+              text-transform: uppercase;
+            }
+
+            td {
+              padding: 10px 9px;
+              border-top: 1px solid var(--line);
+              font-size: 11px;
+              vertical-align: middle;
+            }
+
+            tbody tr:first-child td {
+              border-top: 0;
+            }
+
+            tbody tr:nth-child(even) {
+              background: #f8fafc;
+            }
+
+            .item-number {
+              width: 7%;
+              color: var(--muted);
+              text-align: center;
+            }
+
+            .product-name {
+              width: 45%;
+              color: var(--navy-dark);
+              font-weight: 600;
+            }
+
+            .quantity {
+              width: 13%;
+              text-align: center;
+              white-space: nowrap;
+            }
+
+            .number {
+              width: 17.5%;
+              text-align: right;
+              white-space: nowrap;
+            }
+
+            .subtotal {
+              font-weight: 700;
+            }
+
+            .totals-wrap {
+              display: flex;
+              justify-content: flex-end;
+              margin-top: 14px;
+              page-break-inside: avoid;
+            }
+
+            .totals {
+              width: 330px;
+              overflow: hidden;
+              border: 1px solid var(--line);
+              border-radius: 6px;
+            }
+
+            .total-row {
+              display: flex;
+              justify-content: space-between;
+              padding: 9px 13px;
+              border-bottom: 1px solid var(--line);
+            }
+
+            .total-row span:first-child {
+              color: var(--muted);
+            }
+
+            .total-row span:last-child {
+              font-weight: 700;
+            }
+
+            .total-row.grand-total {
+              padding: 13px;
+              border-bottom: 0;
+              color: #ffffff;
+              background: var(--teal);
+              font-size: 18px;
+              font-weight: 800;
+            }
+
+            .total-row.grand-total span {
+              color: #ffffff;
+            }
+
+            .observations {
+              margin-top: 16px;
+              padding: 12px 14px;
+              border: 1px solid var(--line);
+              border-radius: 5px;
+              background: var(--teal-soft);
+              page-break-inside: avoid;
+            }
+
+            .observations span {
+              color: var(--teal);
+              font-size: 10px;
+              font-weight: 700;
+              letter-spacing: 0.7px;
+              text-transform: uppercase;
+            }
+
+            .observations p {
+              margin: 6px 0 0;
+              white-space: pre-wrap;
+            }
+
+            .footer {
+              margin-top: 26px;
+              padding-top: 12px;
+              border-top: 1px solid var(--line);
+              color: var(--muted);
+              font-size: 10px;
+              text-align: center;
+            }
+
+            .footer strong {
+              display: block;
+              margin-bottom: 4px;
+              color: var(--navy);
+              font-size: 12px;
+            }
+          </style>
+        </head>
+
+        <body>
+          <main class="document">
+            <header class="brand-header">
+              <img
+                class="brand-logo"
+                src="${logoDataUri}"
+                alt="Yungas Distribuidora"
+              />
+
+              <div class="document-heading">
+                <p class="eyebrow">Comprobante para el cliente</p>
+                <h1>${isCancelled ? 'NOTA DE VENTA ANULADA' : 'NOTA DE VENTA'}</h1>
+                <div class="sale-number">
+                  N.º ${this.escapeHtml(sale.saleNumber)}
+                </div>
+              </div>
+            </header>
+
+            ${cancellationBanner}
+
+            <section class="client-grid">
+              <div class="info-card">
+                <span class="info-label">Cliente</span>
+                <span class="info-value">${this.escapeHtml(sale.client.fullName)}</span>
+              </div>
+
+              <div class="info-card">
+                <span class="info-label">Localidad</span>
+                <span class="info-value">
+                  ${this.escapeHtml(sale.client.location?.name || '-')}
+                </span>
+              </div>
+
+              <div class="info-card">
+                <span class="info-label">Fecha de venta</span>
+                <span class="info-value">${this.escapeHtml(saleDate)}</span>
+              </div>
+            </section>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="text-align:center;">N.º</th>
+                  <th>Producto</th>
+                  <th style="text-align:center;">Cantidad</th>
+                  <th style="text-align:right;">Precio unit.</th>
+                  <th style="text-align:right;">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+
+            <section class="totals-wrap">
+              <div class="totals">
+                <div class="total-row">
+                  <span>Subtotal</span>
+                  <span>${sale.subtotal.toFixed(2)} Bs.</span>
+                </div>
+                <div class="total-row">
+                  <span>Descuento</span>
+                  <span>${sale.discount.toFixed(2)} Bs.</span>
+                </div>
+                <div class="total-row grand-total">
+                  <span>TOTAL</span>
+                  <span>${sale.total.toFixed(2)} Bs.</span>
+                </div>
+              </div>
+            </section>
+
+            ${observations}
+
+            <footer class="footer">
+              <strong>Gracias por confiar en Yungas Distribuidora</strong>
+              Logística de confianza · Yungas, La Paz - Bolivia
+              <br />
+              Documento generado: ${this.escapeHtml(generatedAt)}
+            </footer>
+          </main>
+        </body>
+      </html>
+    `;
 
     const fileName = isCancelled
       ? `venta-anulada-${sale.saleNumber}`
