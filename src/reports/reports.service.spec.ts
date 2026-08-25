@@ -88,6 +88,10 @@ describe('ReportsService', () => {
     expect(html).toContain('data:image/jpeg;base64,');
     expect(html).toContain('Franklin Cutili');
     expect(html).toContain('20260825-008');
+    expect(html).toContain('Nro. de venta');
+    expect(html).toContain('Fecha de emisión');
+    expect(html).toContain('Detalle de productos');
+    expect(html).toContain('class="brand-block"');
     expect(html).not.toContain('Atendido por');
     expect(html).not.toContain('Eriverto Condori Antonio');
     expect(storage.savePrivatePdf).toHaveBeenCalledWith(
