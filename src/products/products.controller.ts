@@ -45,7 +45,7 @@ export class ProductsController {
     @Query('includeInactive') includeInactive?: string,
   ) {
     const products = search
-      ? await this.productsService.searchByName(search)
+      ? await this.productsService.search(search)
       : categoryId
         ? await this.productsService.findByCategory(categoryId)
         : providerId

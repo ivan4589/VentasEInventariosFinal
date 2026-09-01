@@ -1,5 +1,6 @@
 export class ProductResponseDto {
   id: string;
+  code: string;
   name: string;
   description?: string;
   providerId: string;

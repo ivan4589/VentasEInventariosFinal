@@ -326,6 +326,7 @@ model SubCategory {
 
 model Product {
   id                   String                    @id @default(cuid())
+  code                 String                    @unique
   name                 String
   nameNormalized       String
   description          String?
