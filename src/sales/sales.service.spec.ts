@@ -129,6 +129,76 @@ describe('SalesService - stock del Almacén Central', () => {
     ]);
   });
 
+  it('respeta el precio unitario modificado manualmente', async () => {
+    const prisma = createPrisma();
+    prisma.warehouseStock.findMany.mockResolvedValue([
+      {
+        productId: 'product_1',
+        stock: 10,
+        reservedStock: 0,
+      },
+    ]);
+    const service = new SalesService(prisma, {
+      generateSalePDF: jest.fn(),
+    } as any);
+
+    const result = await (service as any).validateAndPrepareDetails(
+      'client_1',
+      [
+        {
+          productId: 'product_1',
+          quantity: 5,
+          unitPrice: 11,
+          manualPrice: true,
+        },
+      ],
+    );
+
+    expect(result.preparedDetails).toEqual([
+      expect.objectContaining({
+        productId: 'product_1',
+        quantity: 5,
+        unitPrice: 11,
+        subtotal: 55,
+      }),
+    ]);
+  });
+
+  it('mantiene el precio automático cuando no fue modificado', async () => {
+    const prisma = createPrisma();
+    prisma.warehouseStock.findMany.mockResolvedValue([
+      {
+        productId: 'product_1',
+        stock: 10,
+        reservedStock: 0,
+      },
+    ]);
+    const service = new SalesService(prisma, {
+      generateSalePDF: jest.fn(),
+    } as any);
+
+    const result = await (service as any).validateAndPrepareDetails(
+      'client_1',
+      [
+        {
+          productId: 'product_1',
+          quantity: 5,
+          unitPrice: 11,
+          manualPrice: false,
+        },
+      ],
+    );
+
+    expect(result.preparedDetails).toEqual([
+      expect.objectContaining({
+        productId: 'product_1',
+        quantity: 5,
+        unitPrice: 10,
+        subtotal: 50,
+      }),
+    ]);
+  });
+
   it('al confirmar descuenta el Central y registra el movimiento de salida', async () => {
     const prisma = createPrisma();
     prisma.sale.findUnique.mockResolvedValue({

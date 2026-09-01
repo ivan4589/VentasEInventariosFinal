@@ -12,6 +12,9 @@ jest.mock('puppeteer', () => ({
 
 describe('CollectionsService', () => {
   let service: CollectionsService;
+  let reportHistory: {
+    create: jest.Mock;
+  };
 
   const prisma = {
     sale: {
@@ -41,6 +44,9 @@ describe('CollectionsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    reportHistory = {
+      create: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -51,9 +57,7 @@ describe('CollectionsService', () => {
         },
         {
           provide: ReportHistoryService,
-          useValue: {
-            create: jest.fn(),
-          },
+          useValue: reportHistory,
         },
         {
           provide: ObjectStorageService,
@@ -187,6 +191,43 @@ describe('CollectionsService', () => {
         role: $Enums.Role.COBRADOR,
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('devuelve la ruta protegida al generar el PDF general de cobranza', async () => {
+    jest.spyOn(service, 'findDebts').mockResolvedValue({
+      clients: [],
+      summary: {
+        clientsCount: 0,
+        salesCount: 0,
+        totalDebt: 0,
+        totalPaid: 0,
+        totalBalance: 0,
+        overdueBalance: 0,
+        unassignedSalesCount: 0,
+      },
+    } as any);
+    jest
+      .spyOn(service as any, 'createPdf')
+      .mockResolvedValue('/uploads/collections/reporte.pdf');
+    reportHistory.create.mockResolvedValue({
+      id: 'history-1',
+      pdfUrl: '/api/documents/reports/history-1',
+    });
+
+    const result = await service.generateGeneralDebtPdf({
+      id: 1,
+      role: $Enums.Role.ADMIN,
+    });
+
+    expect(reportHistory.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pdfUrl: '/uploads/collections/reporte.pdf',
+      }),
+    );
+    expect(result).toEqual({
+      pdfUrl: '/api/documents/reports/history-1',
+      historyId: 'history-1',
+    });
   });
 
   it.each([$Enums.SaleType.CASH, $Enums.SaleType.CREDIT])(
