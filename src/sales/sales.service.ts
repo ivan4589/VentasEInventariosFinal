@@ -437,9 +437,12 @@ export class SalesService {
             detail.quantity,
           );
 
-        // El precio siempre se obtiene del catálogo del servidor.
-        // El valor enviado por la interfaz nunca es una fuente confiable.
-        const unitPrice = automaticPrice;
+        // Conserva el precio histórico cuando el usuario lo modificó
+        // explícitamente. Si no hay modificación, el servidor continúa
+        // calculando el precio vigente según el cliente y la cantidad.
+        const unitPrice = detail.manualPrice
+          ? detail.unitPrice
+          : automaticPrice;
 
         return {
           productId: product.id,

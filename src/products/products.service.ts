@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { DataAuditService } from '../data-protection/data-audit.service';
 import { normalizeDisplayText, normalizeSearchText, requireChangeReason } from '../data-protection/data-normalization';
@@ -17,6 +18,44 @@ export class ProductsService {
     private readonly prisma: PrismaService,
     private readonly audit: DataAuditService,
   ) {}
+
+  private normalizeProductCode(code: string): string {
+    return code.trim().toUpperCase();
+  }
+
+  private async resolveNewProductCode(
+    requestedCode?: string,
+  ): Promise<string> {
+    if (requestedCode) {
+      const code = this.normalizeProductCode(requestedCode);
+      const existing = await this.prisma.product.findUnique({
+        where: { code },
+        select: { id: true },
+      });
+
+      if (existing) {
+        throw new ConflictException(
+          `Ya existe un producto con el código "${code}"`,
+        );
+      }
+
+      return code;
+    }
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const code = `PRD-${randomBytes(6).toString('hex').toUpperCase()}`;
+      const existing = await this.prisma.product.findUnique({
+        where: { code },
+        select: { id: true },
+      });
+
+      if (!existing) return code;
+    }
+
+    throw new ConflictException(
+      'No se pudo generar un código único para el producto. Intenta nuevamente.',
+    );
+  }
 
   private toResponse(product: any): ProductResponseDto {
     const {
@@ -83,17 +122,28 @@ export class ProductsService {
     return this.toResponse(product);
   }
 
-  // Búsqueda por nombre (parcial, insensible a mayúsculas)
-  async searchByName(name: string): Promise<ProductResponseDto[]> {
+  // Búsqueda por código o nombre (parcial, insensible a mayúsculas)
+  async search(query: string): Promise<ProductResponseDto[]> {
+    const normalizedName = normalizeSearchText(query);
+    const normalizedCode = this.normalizeProductCode(query);
     const products = await this.prisma.product.findMany({
       where: {
         isActive: true,
-        name: {
-          contains: name,
-          mode: 'insensitive',
-        },
+        OR: [
+          {
+            nameNormalized: {
+              contains: normalizedName,
+            },
+          },
+          {
+            code: {
+              contains: normalizedCode,
+            },
+          },
+        ],
       },
       include: this.productInclude(),
+      orderBy: { name: 'asc' },
     });
     return products.map((p) => this.toResponse(p));
   }
@@ -157,9 +207,11 @@ export class ProductsService {
     const minStock = createProductDto.minStock ?? 0;
     const reserveQuantity = createProductDto.reserveQuantity ?? 0;
     const unit = createProductDto.unit ?? 'UNIDAD';
+    const code = await this.resolveNewProductCode(createProductDto.code);
 
     const product = await this.prisma.product.create({
       data: {
+        code,
         name: normalizeDisplayText(createProductDto.name),
         nameNormalized: normalizedName,
         description: createProductDto.description,
@@ -243,6 +295,25 @@ export class ProductsService {
       }
     }
 
+    const normalizedCode =
+      updateProductDto.code !== undefined
+        ? this.normalizeProductCode(updateProductDto.code)
+        : product.code;
+    const codeChanged = normalizedCode !== product.code;
+
+    if (codeChanged) {
+      const existingCode = await this.prisma.product.findUnique({
+        where: { code: normalizedCode },
+        select: { id: true },
+      });
+
+      if (existingCode && existingCode.id !== id) {
+        throw new ConflictException(
+          `Ya existe un producto con el código "${normalizedCode}"`,
+        );
+      }
+    }
+
     const priceFields = [
       'purchasePrice',
       'priceNormal',
@@ -262,6 +333,7 @@ export class ProductsService {
     const updated = await this.prisma.product.update({
       where: { id },
       data: {
+        code: codeChanged ? normalizedCode : undefined,
         name: updateProductDto.name
           ? normalizeDisplayText(updateProductDto.name)
           : undefined,
@@ -287,7 +359,11 @@ export class ProductsService {
     });
     await this.audit.record({
       userId: actorId,
-      action: changedPrices.length ? 'PRODUCT_PRICES_UPDATED' : 'PRODUCT_UPDATED',
+      action: changedPrices.length
+        ? 'PRODUCT_PRICES_UPDATED'
+        : codeChanged
+          ? 'PRODUCT_CODE_UPDATED'
+          : 'PRODUCT_UPDATED',
       entityType: 'PRODUCT',
       entityId: id,
       reason: changeReason,

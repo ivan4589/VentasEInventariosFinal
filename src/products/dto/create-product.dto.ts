@@ -5,10 +5,20 @@ import {
   IsString,
   Min,
   MaxLength,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateProductDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(40)
+  @Matches(/^[A-Za-z0-9-]+$/, {
+    message: 'El código solo puede contener letras, números y guiones',
+  })
+  code?: string;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(180)

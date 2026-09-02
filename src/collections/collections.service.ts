@@ -560,7 +560,7 @@ export class CollectionsService {
     );
 
     return {
-      pdfUrl,
+      pdfUrl: history.pdfUrl,
       historyId: history.id,
     };
   }
@@ -663,7 +663,7 @@ export class CollectionsService {
     );
 
     return {
-      pdfUrl,
+      pdfUrl: history.pdfUrl,
       historyId: history.id,
     };
   }
@@ -723,7 +723,7 @@ export class CollectionsService {
     );
 
     return {
-      pdfUrl,
+      pdfUrl: history.pdfUrl,
       historyId: history.id,
     };
   }
