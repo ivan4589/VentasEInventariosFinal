@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import ExcelJS from 'exceljs';
-import { protectSpreadsheetCell } from '../reports/report-range';
 import {
   ParsedSpreadsheetRow,
   SpreadsheetImportAction,
@@ -100,7 +99,7 @@ export class SpreadsheetFileService {
     }));
 
     rows.forEach((values) => {
-      worksheet.addRow(values.map((value) => protectSpreadsheetCell(value)));
+      worksheet.addRow(values.map((value) => this.workbookCell(value)));
     });
 
     this.styleDataSheet(worksheet, headers.length);
@@ -126,9 +125,7 @@ export class SpreadsheetFileService {
 
     for (let index = 0; index < maximum; index += 1) {
       worksheet.addRow(
-        columns.map((column) =>
-          protectSpreadsheetCell(column.values[index] || ''),
-        ),
+        columns.map((column) => this.workbookCell(column.values[index] || '')),
       );
     }
 
@@ -299,6 +296,18 @@ export class SpreadsheetFileService {
           .trim();
       }
     }
+    return '';
+  }
+
+  private workbookCell(value: unknown): string | number | boolean | Date {
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return value;
+    }
+    if (value instanceof Date) return value;
     return '';
   }
 

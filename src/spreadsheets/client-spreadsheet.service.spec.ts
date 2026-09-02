@@ -108,6 +108,26 @@ describe('ClientSpreadsheetService', () => {
     );
   });
 
+  it('conserva textos que comienzan con símbolos al exportar e importar', async () => {
+    const files = new SpreadsheetFileService();
+    const { workbook } = files.createWorkbook(
+      'Datos',
+      ['VALOR'],
+      [24],
+      [['=1+1'], ['-Cliente'], ['+Dato'], ['@Dato']],
+    );
+    const buffer = await files.toBuffer(workbook);
+
+    const rows = await files.readRows(buffer, 'Datos', ['VALOR']);
+
+    expect(rows.map((row) => row.values.VALOR)).toEqual([
+      '=1+1',
+      '-Cliente',
+      '+Dato',
+      '@Dato',
+    ]);
+  });
+
   it('detecta clientes nuevos y actualizaciones por teléfono', async () => {
     const buffer = await clientWorkbook([
       ['', 'Ana Actualizada', '', '', '', '70000000', '', '', ''],
@@ -153,6 +173,22 @@ describe('ClientSpreadsheetService', () => {
     expect(preview.summary.errors).toBe(1);
     expect(preview.rows[0].errors).toContain(
       'LOCALIDAD no existe en el sistema',
+    );
+  });
+
+  it('crea un cliente nuevo si el teléfono sólo pertenece a uno inactivo', async () => {
+    prisma.client.findMany.mockResolvedValue([
+      { ...existingClient, isActive: false },
+    ]);
+    const buffer = await clientWorkbook([
+      ['', 'Ana Nueva', '', 'NORMAL', 'Caranavi', '70000000', 'NO', '', ''],
+    ]);
+
+    const preview = await service.preview(buffer);
+
+    expect(preview.valid).toBe(true);
+    expect(preview.summary).toEqual(
+      expect.objectContaining({ created: 1, updated: 0, errors: 0 }),
     );
   });
 

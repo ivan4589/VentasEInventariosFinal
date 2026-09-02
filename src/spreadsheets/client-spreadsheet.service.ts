@@ -228,7 +228,7 @@ export class ClientSpreadsheetService {
     const clientById = new Map(clients.map((client) => [client.id, client]));
     const clientByPhone = new Map(
       clients
-        .filter((client) => client.phoneNormalized)
+        .filter((client) => client.isActive && client.phoneNormalized)
         .map((client) => [client.phoneNormalized!, client]),
     );
     const claimedTargets = new Map<string, number>();

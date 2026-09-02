@@ -560,7 +560,8 @@ export class ProductSpreadsheetService {
 
       const finalNameNormalized =
         data.nameNormalized || existing?.nameNormalized;
-      if (finalNameNormalized) {
+      const finalIsActive = existing?.isActive ?? true;
+      if (finalIsActive && finalNameNormalized) {
         const owner = activeProductByName.get(finalNameNormalized);
         if (owner && owner.id !== existing?.id) {
           errors.push('NOMBRE ya pertenece a otro producto activo');

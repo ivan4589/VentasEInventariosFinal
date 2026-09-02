@@ -250,6 +250,28 @@ describe('ProductSpreadsheetService', () => {
     );
   });
 
+  it('acepta una exportación con nombres repetidos entre activos e inactivos', async () => {
+    const inactiveProduct = { ...existingProduct, isActive: false };
+    const activeProduct = {
+      ...existingProduct,
+      id: 'product-2',
+      code: 'PRD-2',
+      isActive: true,
+    };
+    prisma.product.findMany.mockResolvedValue([inactiveProduct, activeProduct]);
+    const buffer = await productWorkbook([
+      [inactiveProduct.id, ...Array(19).fill('')],
+      [activeProduct.id, ...Array(19).fill('')],
+    ]);
+
+    const preview = await service.preview(buffer);
+
+    expect(preview.valid).toBe(true);
+    expect(preview.summary).toEqual(
+      expect.objectContaining({ unchanged: 2, errors: 0 }),
+    );
+  });
+
   it('actualiza datos y nunca importa el stock de la hoja', async () => {
     const buffer = await productWorkbook([
       [
