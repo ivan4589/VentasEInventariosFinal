@@ -303,7 +303,16 @@ export class SalesService {
     clientId: string,
     details: CreateSaleDto['details'],
     currentSaleId?: string,
+    userRole: $Enums.Role = $Enums.Role.ADMIN,
   ) {
+    if (
+      userRole !== $Enums.Role.ADMIN &&
+      details?.some((detail) => detail.manualPrice)
+    ) {
+      throw new BadRequestException(
+        'Solo el administrador puede modificar precios manualmente',
+      );
+    }
     if (!details?.length) {
       throw new BadRequestException(
         'La venta debe tener al menos un producto',
@@ -507,6 +516,8 @@ export class SalesService {
       await this.validateAndPrepareDetails(
         clientId,
         details,
+        undefined,
+        userRole,
       );
 
     const subtotal = this.roundMoney(
@@ -808,6 +819,7 @@ export class SalesService {
     id: string,
     updateSaleDto: UpdateSaleDto,
     userRole: $Enums.Role,
+    actorId: number,
   ): Promise<SaleResponseDto> {
     const current =
       await this.prisma.sale.findUnique({
@@ -868,18 +880,29 @@ export class SalesService {
         : current.discount;
 
     let newSubtotal = current.subtotal;
+    const detailsToUpdate =
+      updateSaleDto.details ||
+      (finalClientId !== current.clientId
+        ? current.details.map((detail) => ({
+            productId: detail.productId,
+            quantity: detail.quantity,
+            unitPrice: detail.unitPrice,
+            manualPrice: false,
+          }))
+        : undefined);
 
     await this.prisma.$transaction(
       async (prisma) => {
-        if (updateSaleDto.details) {
+        if (detailsToUpdate) {
           const {
             centralWarehouse,
             preparedDetails,
           } =
             await this.validateAndPrepareDetails(
               finalClientId,
-              updateSaleDto.details,
+              detailsToUpdate,
               id,
+              userRole,
             );
 
           for (const oldDetail of current.details) {
@@ -1018,7 +1041,7 @@ export class SalesService {
       updated.paymentStatus ===
       $Enums.PaymentStatus.PAID
     ) {
-      return this.confirm(id, updated.userId);
+      return this.confirm(id, actorId);
     }
 
     return updated;
