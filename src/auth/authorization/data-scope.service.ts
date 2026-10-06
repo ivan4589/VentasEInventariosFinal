@@ -77,6 +77,17 @@ export class DataScopeService {
     }
   }
 
+  async assertCanManagePresale(saleId: string, actor: AuthorizationActor) {
+    if (actor.role !== $Enums.Role.ADMIN && actor.role !== $Enums.Role.VENDEDOR) {
+      throw new ForbiddenException('Tu rol no puede administrar preventas');
+    }
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { id: true },
+    });
+    if (!sale) throw new NotFoundException('Venta no encontrada');
+  }
+
   async assertCanManageSale(saleId: string, actor: AuthorizationActor) {
     if (actor.role === $Enums.Role.ADMIN) return;
     if (actor.role !== $Enums.Role.VENDEDOR) {
@@ -91,7 +102,7 @@ export class DataScopeService {
     if (!sale) throw new NotFoundException('Venta no encontrada');
     if (sale.userId !== actor.id) {
       throw new ForbiddenException(
-        'Solo puedes modificar, confirmar, devolver o enviar tus propias ventas',
+        'Solo puedes registrar devoluciones de tus propias ventas',
       );
     }
   }

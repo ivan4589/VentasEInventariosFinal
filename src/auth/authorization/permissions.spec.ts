@@ -16,6 +16,9 @@ describe('Matriz fija de roles y permisos', () => {
     expect(
       roleHasPermissions($Enums.Role.VENDEDOR, [
         PERMISSIONS.SALES_VIEW_ALL,
+        PERMISSIONS.SALES_UPDATE_ALL,
+        PERMISSIONS.SALES_CONFIRM_ALL,
+        PERMISSIONS.SALES_WHATSAPP_ALL,
         PERMISSIONS.SALES_DOWNLOAD_ALL,
         PERMISSIONS.REPORTS_SALES_ALL,
       ]),
@@ -46,6 +49,9 @@ describe('Matriz fija de roles y permisos', () => {
     expect(permissions).not.toContain(PERMISSIONS.PRODUCTS_VIEW);
     expect(permissions).not.toContain(PERMISSIONS.INVENTORY_VIEW);
     expect(permissions).not.toContain(PERMISSIONS.SALES_VIEW_ALL);
+    expect(permissions).not.toContain(PERMISSIONS.SALES_UPDATE_ALL);
+    expect(permissions).not.toContain(PERMISSIONS.SALES_CONFIRM_ALL);
+    expect(permissions).not.toContain(PERMISSIONS.SALES_WHATSAPP_ALL);
     expect(permissions).not.toContain(PERMISSIONS.SALES_DOWNLOAD_ALL);
     expect(permissions).not.toContain(PERMISSIONS.PAYMENTS_UPDATE);
     expect(permissions).not.toContain(PERMISSIONS.PAYMENTS_CANCEL);

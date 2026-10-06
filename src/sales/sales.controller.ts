@@ -115,13 +115,13 @@ export class SalesController {
 
   @Patch(':id/confirm')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
-  @Permissions(PERMISSIONS.SALES_CONFIRM_OWN)
+  @Permissions(PERMISSIONS.SALES_CONFIRM_ALL)
   async confirm(
     @Param('id') id: string,
     @Request() req: any,
     @Headers('idempotency-key') operationKey?: string,
   ) {
-    await this.dataScope.assertCanManageSale(id, req.user);
+    await this.dataScope.assertCanManagePresale(id, req.user);
     return this.integrity.run({
       operationKey,
       locks: [`sale:${id}`],
@@ -138,14 +138,14 @@ export class SalesController {
 
   @Patch(':id')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
-  @Permissions(PERMISSIONS.SALES_UPDATE_OWN)
+  @Permissions(PERMISSIONS.SALES_UPDATE_ALL)
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateSaleDto,
     @Request() req: any,
     @Headers('idempotency-key') operationKey?: string,
   ) {
-    await this.dataScope.assertCanManageSale(id, req.user);
+    await this.dataScope.assertCanManagePresale(id, req.user);
     return this.integrity.run({
       operationKey,
       locks: [
@@ -156,7 +156,7 @@ export class SalesController {
       action: 'SALE_UPDATED',
       entityType: 'SALE',
       execute: async () => {
-        const value = await this.salesService.update(id, dto, req.user.role);
+        const value = await this.salesService.update(id, dto, req.user.role, req.user.id);
         return { entityId: id, value, details: { total: value.total } };
       },
       resolveExisting: () => this.salesService.findOne(id),
@@ -165,13 +165,13 @@ export class SalesController {
 
   @Post(':id/whatsapp')
   @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
-  @Permissions(PERMISSIONS.SALES_WHATSAPP_OWN)
+  @Permissions(PERMISSIONS.SALES_WHATSAPP_ALL)
   async sendWhatsApp(
     @Param('id') id: string,
     @Body() dto: SendSaleWhatsAppDto,
     @Request() req: any,
   ) {
-    await this.dataScope.assertCanManageSale(id, req.user);
+    await this.dataScope.assertCanManagePresale(id, req.user);
     return this.whatsappService.sendSaleDocument(
       id,
       req.user.id,
