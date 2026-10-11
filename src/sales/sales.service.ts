@@ -104,8 +104,8 @@ export class SalesService {
   ): number {
     if (
       clientType === $Enums.ClientType.NORMAL &&
-      product.priceMayorista !== null &&
-      product.minQuantityWholesale !== null &&
+      Number(product.priceMayorista) > 0 &&
+      Number(product.minQuantityWholesale) > 0 &&
       quantity >= product.minQuantityWholesale
     ) {
       return product.priceMayorista;

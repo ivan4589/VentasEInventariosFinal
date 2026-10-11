@@ -122,7 +122,7 @@ export class SalesController {
     @Headers('idempotency-key') operationKey?: string,
   ) {
     await this.dataScope.assertCanManagePresale(id, req.user);
-    return this.integrity.run({
+    const sale = await this.integrity.run({
       operationKey,
       locks: [`sale:${id}`],
       userId: req.user.id,
@@ -134,6 +134,7 @@ export class SalesController {
       },
       resolveExisting: () => this.salesService.findOne(id),
     });
+    return this.dataScope.sanitizeSaleForActor(sale, req.user);
   }
 
   @Patch(':id')
@@ -146,7 +147,7 @@ export class SalesController {
     @Headers('idempotency-key') operationKey?: string,
   ) {
     await this.dataScope.assertCanManagePresale(id, req.user);
-    return this.integrity.run({
+    const sale = await this.integrity.run({
       operationKey,
       locks: [
         `sale:${id}`,
@@ -161,6 +162,7 @@ export class SalesController {
       },
       resolveExisting: () => this.salesService.findOne(id),
     });
+    return this.dataScope.sanitizeSaleForActor(sale, req.user);
   }
 
   @Post(':id/whatsapp')

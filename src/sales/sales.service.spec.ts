@@ -62,6 +62,16 @@ function createPrisma() {
 }
 
 describe('SalesService - stock del Almacén Central', () => {
+  it.each([
+    { priceMayorista: 0, minQuantityWholesale: 5 },
+    { priceMayorista: 8, minQuantityWholesale: 0 },
+    { priceMayorista: null, minQuantityWholesale: null },
+  ])('no activa un precio mayorista deshabilitado %j', (wholesale) => {
+    const service = new SalesService(createPrisma(), {} as any);
+    expect((service as any).getDefaultProductPrice({
+      priceNormal: 10, ...wholesale,
+    }, $Enums.ClientType.NORMAL, 10)).toBe(10);
+  });
   it('no vuelve a descontar stock ni cambia quién confirmó al repetir la confirmación', async () => {
     const prisma = createPrisma();
     prisma.sale.findUnique.mockResolvedValue({ status: $Enums.SaleStatus.CONFIRMED });
