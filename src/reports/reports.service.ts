@@ -7,6 +7,7 @@ import { ReportHistoryService } from './report-history.service';
 import { ReportFiltersDto } from './dto/report-filters.dto';
 import { renderPdf } from '../common/pdf/render-pdf';
 import { ObjectStorageService } from '../storage/object-storage.service';
+import { buildSaleNoteLines } from './sale-note-lines';
 
 @Injectable()
 export class ReportsService {
@@ -347,7 +348,7 @@ export class ReportsService {
         },
         details: {
           include: {
-            product: true,
+            product: { include: { subCategory: true } },
           },
         },
       },
@@ -357,16 +358,16 @@ export class ReportsService {
       throw new NotFoundException('Venta no encontrada');
     }
 
-    const rows = sale.details
+    const rows = buildSaleNoteLines(sale.details)
       .map(
         (detail, index) => `
           <tr>
             <td class="item-number">${index + 1}</td>
             <td class="product-name">
-              ${this.escapeHtml(detail.product.name)}
+              ${this.escapeHtml(detail.name)}
             </td>
             <td class="quantity">${detail.quantity}</td>
-            <td class="number">${detail.unitPrice.toFixed(2)}</td>
+            <td class="number">${detail.unitPrice === null ? 'Varios' : detail.unitPrice.toFixed(2)}</td>
             <td class="number subtotal">${detail.subtotal.toFixed(2)}</td>
           </tr>
         `,
@@ -568,6 +569,7 @@ export class ReportsService {
             .product-name {
               width: 45%;
               font-weight: 500;
+              overflow-wrap: anywhere;
             }
 
             .quantity {

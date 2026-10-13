@@ -3,6 +3,9 @@ export class CentralInventoryProductDto {
   code: string;
   name: string;
   unit: string;
+  presentation?: string | null;
+  subCategoryId?: string | null;
+  subCategoryName?: string | null;
   stock: number;
   reservedStock: number;
   availableStock: number;
@@ -11,6 +14,16 @@ export class CentralInventoryProductDto {
 export class CentralInventoryCategoryDto {
   categoryId: string;
   categoryName: string;
+  products: CentralInventoryProductDto[];
+  subCategories: CentralInventorySubCategoryDto[];
+  totalStock: number;
+  totalReservedStock: number;
+  totalAvailableStock: number;
+}
+
+export class CentralInventorySubCategoryDto {
+  subCategoryId: string | null;
+  subCategoryName: string;
   products: CentralInventoryProductDto[];
   totalStock: number;
   totalReservedStock: number;

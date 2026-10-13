@@ -19,6 +19,15 @@ export class ProductsService {
     private readonly audit: DataAuditService,
   ) {}
 
+  private async validateSubCategory(subCategoryId: string | null | undefined, categoryId: string) {
+    if (!subCategoryId) return;
+    const subCategory = await this.prisma.subCategory.findUnique({ where: { id: subCategoryId } });
+    if (!subCategory) throw new NotFoundException('Subcategoría no encontrada');
+    if (subCategory.categoryId !== categoryId) {
+      throw new BadRequestException('La subcategoría no pertenece a la categoría del producto');
+    }
+  }
+
   private normalizeProductCode(code: string): string {
     return code.trim().toUpperCase();
   }
@@ -183,13 +192,7 @@ export class ProductsService {
     if (!category) throw new NotFoundException('Categoría no encontrada');
 
     // Validar que la subcategoría existe (si se proporciona)
-    if (createProductDto.subCategoryId) {
-      const subCategory = await this.prisma.subCategory.findUnique({
-        where: { id: createProductDto.subCategoryId },
-      });
-      if (!subCategory)
-        throw new NotFoundException('Subcategoría no encontrada');
-    }
+    await this.validateSubCategory(createProductDto.subCategoryId, createProductDto.categoryId);
 
     // Verificar que no exista un producto con el mismo nombre (opcional, pero recomendado)
     const normalizedName = normalizeSearchText(createProductDto.name);
@@ -267,13 +270,10 @@ export class ProductsService {
       if (!category) throw new NotFoundException('Categoría no encontrada');
     }
 
-    if (updateProductDto.subCategoryId) {
-      const subCategory = await this.prisma.subCategory.findUnique({
-        where: { id: updateProductDto.subCategoryId },
-      });
-      if (!subCategory)
-        throw new NotFoundException('Subcategoría no encontrada');
-    }
+    await this.validateSubCategory(
+      updateProductDto.subCategoryId !== undefined ? updateProductDto.subCategoryId : product.subCategoryId,
+      updateProductDto.categoryId ?? product.categoryId,
+    );
 
     // Si se actualiza el nombre, verificar que no exista otro producto con el mismo nombre
     const normalizedName = updateProductDto.name

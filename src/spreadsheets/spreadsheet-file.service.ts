@@ -15,6 +15,7 @@ export class SpreadsheetFileService {
     contents: Buffer,
     sheetName: string,
     expectedHeaders: readonly string[],
+    optionalHeaders: readonly string[] = [],
   ): Promise<ParsedSpreadsheetRow[]> {
     const workbook = new ExcelJS.Workbook();
 
@@ -33,12 +34,19 @@ export class SpreadsheetFileService {
       throw new BadRequestException('El archivo Excel no contiene hojas');
     }
 
-    const actualHeaders = expectedHeaders.map((_, index) =>
+    const actualHeaders = Array.from({ length: Math.max(worksheet.getRow(1).cellCount, expectedHeaders.length) }, (_, index) =>
       this.cellText(worksheet.getRow(1).getCell(index + 1)).toUpperCase(),
     );
     const missing = expectedHeaders.filter(
-      (header, index) => actualHeaders[index] !== header,
+      (header, index) => optionalHeaders.length
+        ? !optionalHeaders.includes(header) && !actualHeaders.includes(header)
+        : actualHeaders[index] !== header,
     );
+    const present = expectedHeaders.filter((header) => actualHeaders.includes(header));
+    const recognized = actualHeaders.filter((header) => expectedHeaders.includes(header));
+    if (optionalHeaders.length && present.join('|') !== recognized.join('|')) {
+      throw new BadRequestException('Las columnas reconocidas deben conservar su orden y no estar duplicadas');
+    }
 
     if (missing.length) {
       throw new BadRequestException(
@@ -54,7 +62,9 @@ export class SpreadsheetFileService {
       const values = Object.fromEntries(
         expectedHeaders.map((header, index) => [
           header,
-          this.cellText(row.getCell(index + 1)),
+          optionalHeaders.length
+            ? (actualHeaders.includes(header) ? this.cellText(row.getCell(actualHeaders.indexOf(header) + 1)) : '')
+            : this.cellText(row.getCell(index + 1)),
         ]),
       );
 

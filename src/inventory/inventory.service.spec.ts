@@ -102,6 +102,21 @@ describe('InventoryService', () => {
     );
   });
 
+  it('incluye subcategorías y presentación sin cambiar productos planos ni mezclar depósitos', async () => {
+    const rows = [
+      { stock: 10, reservedStock: 2, product: { id: 'a', code: 'COD-A', name: 'Corbata', unit: 'UNIDAD', weight: 'Arroba', provider: { id: 'p', companyName: 'La Suprema' }, category: { id: 'c', name: 'Fideos' }, subCategory: { id: 's', name: 'Fideo arroba' } } },
+      { stock: 5, reservedStock: 1, product: { id: 'b', code: 'COD-B', name: 'Tornillo', unit: 'UNIDAD', weight: 'Arroba', provider: { id: 'p', companyName: 'La Suprema' }, category: { id: 'c', name: 'Fideos' }, subCategory: { id: 's', name: 'Fideo arroba' } } },
+    ];
+    const findFirst = jest.fn().mockResolvedValue({ id: 'central', name: 'Central', code: 'CENTRAL', stocks: rows });
+    const inventory = await new InventoryService({ warehouse: { findFirst } } as any, storage).getInventory();
+    const category = inventory.providers[0].categories[0];
+    expect(category.products.map(row => row.productId)).toEqual(['a', 'b']);
+    expect(category.products[0]).toMatchObject({ code: 'COD-A', presentation: 'Arroba', subCategoryId: 's' });
+    expect(category.subCategories[0]).toMatchObject({ totalStock: 15, totalReservedStock: 3, totalAvailableStock: 12 });
+    expect(findFirst.mock.calls[0][0].where).toEqual({ isDefault: true, isActive: true });
+    expect(findFirst.mock.calls[0][0].select.stocks.where).toEqual({ stock: { gt: 0 } });
+  });
+
   it('devuelve la ruta protegida del PDF generado', async () => {
     const page = {
       setContent: jest.fn(),

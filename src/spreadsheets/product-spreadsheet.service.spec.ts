@@ -330,4 +330,34 @@ describe('ProductSpreadsheetService', () => {
     expect(prisma.product.create.mock.calls[0][0].data.stock).toBe(0);
     expect(audit.record).toHaveBeenCalledTimes(2);
   });
+
+  it('actualizar con Excel antiguo sin SUBCATEGORIA conserva la relación y no cambia stock, precios ni código', async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Productos');
+    const headers = PRODUCT_SPREADSHEET_HEADERS.filter(header => header !== 'SUBCATEGORIA');
+    sheet.addRow([...headers]);
+    sheet.addRow(headers.map(header => header === 'ID_SISTEMA' ? existingProduct.id : header === 'DESCRIPCION' ? 'Nueva descripción' : ''));
+    await service.import(Buffer.from(await workbook.xlsx.writeBuffer()), 1);
+    const data = prisma.product.update.mock.calls[0][0].data;
+    expect(data.description).toBe('Nueva descripción');
+    expect(data).not.toHaveProperty('subCategoryId');
+    expect(data).not.toHaveProperty('stock');
+    expect(data).not.toHaveProperty('priceNormal');
+    expect(data).not.toHaveProperty('code');
+  });
+
+  it('informa una subcategoría ambigua sin modificar productos', async () => {
+    prisma.subCategory.findMany.mockResolvedValue([
+      { id: 'subcategory-1', name: 'Fideos', categoryId: 'category-1' },
+      { id: 'subcategory-2', name: ' FÍDEOS ', categoryId: 'category-1' },
+    ]);
+    const row = PRODUCT_SPREADSHEET_HEADERS.map(header =>
+      header === 'ID_SISTEMA' ? existingProduct.id : header === 'SUBCATEGORIA' ? 'Fideos' : '',
+    );
+    const preview = await service.preview(await productWorkbook([row]));
+    expect(preview.valid).toBe(false);
+    expect(preview.rows[0].errors).toContain('SUBCATEGORIA es ambigua; revisa los nombres del catálogo antes de importar');
+    expect(prisma.product.update).not.toHaveBeenCalled();
+    expect(prisma.product.create).not.toHaveBeenCalled();
+  });
 });

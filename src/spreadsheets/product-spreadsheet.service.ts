@@ -274,6 +274,7 @@ export class ProductSpreadsheetService {
       'CODIGO puede quedar vacío en productos nuevos y el sistema generará uno automáticamente.',
       'Las celdas vacías no modifican datos existentes. Escribe BORRAR para limpiar campos opcionales.',
       'PROVEEDOR, CATEGORIA y SUBCATEGORIA deben existir. La subcategoría debe pertenecer a la categoría indicada.',
+      'Archivos anteriores pueden omitir SUBCATEGORIA: se conserva la subcategoría existente en actualizaciones.',
       'STOCK_SOLO_LECTURA es informativo. La importación nunca modifica existencias ni reservas de almacén.',
       'ESTADO_SOLO_LECTURA es informativo y nunca activa ni desactiva productos.',
       'Los precios admiten cero. La importación no guardará nada mientras exista una fila con error.',
@@ -306,6 +307,7 @@ export class ProductSpreadsheetService {
       contents,
       'Productos',
       PRODUCT_SPREADSHEET_HEADERS,
+      ['SUBCATEGORIA'],
     );
     const [providers, categories, subCategories, products] = await Promise.all([
       this.prisma.provider.findMany(),
@@ -331,6 +333,13 @@ export class ProductSpreadsheetService {
         subCategory,
       ]),
     );
+    const ambiguousSubCategories = new Set<string>();
+    const seenSubCategories = new Set<string>();
+    for (const subCategory of subCategories) {
+      const key = `${subCategory.categoryId}:${normalizeSearchText(subCategory.name)}`;
+      if (seenSubCategories.has(key)) ambiguousSubCategories.add(key);
+      seenSubCategories.add(key);
+    }
     const subCategoryById = new Map(
       subCategories.map((subCategory) => [subCategory.id, subCategory]),
     );
@@ -433,10 +442,13 @@ export class ProductSpreadsheetService {
         if (this.files.isDeleteMarker(rawSubCategory)) {
           data.subCategoryId = null;
         } else if (finalCategoryId) {
+          const lookupKey = `${finalCategoryId}:${normalizeSearchText(rawSubCategory)}`;
           const subCategory = subCategoryByKey.get(
-            `${finalCategoryId}:${normalizeSearchText(rawSubCategory)}`,
+            lookupKey,
           );
-          if (!subCategory) {
+          if (ambiguousSubCategories.has(lookupKey)) {
+            errors.push('SUBCATEGORIA es ambigua; revisa los nombres del catálogo antes de importar');
+          } else if (!subCategory) {
             errors.push('SUBCATEGORIA no existe o no pertenece a CATEGORIA');
           } else {
             data.subCategoryId = subCategory.id;
