@@ -9,6 +9,7 @@ import {
 } from './dto/inventory-response.dto';
 import { renderPdf } from '../common/pdf/render-pdf';
 import { ObjectStorageService } from '../storage/object-storage.service';
+import { groupInventorySubcategories } from './inventory-subcategories';
 
 @Injectable()
 export class InventoryService {
@@ -56,8 +57,11 @@ export class InventoryService {
             product: {
               select: {
                 id: true,
+                code: true,
                 name: true,
                 unit: true,
+                weight: true,
+                subCategory: { select: { id: true, name: true } },
                 provider: {
                   select: {
                     id: true,
@@ -133,9 +137,12 @@ export class InventoryService {
 
       category.products.push({
         productId: product.id,
-        code: this.productCode(product.id),
+        code: product.code || this.productCode(product.id),
         name: product.name,
         unit: product.unit,
+        presentation: product.weight,
+        subCategoryId: product.subCategory?.id ?? null,
+        subCategoryName: product.subCategory?.name ?? null,
         stock: this.roundQuantity(item.stock),
         reservedStock: this.roundQuantity(item.reservedStock),
         availableStock: this.roundQuantity(
@@ -159,6 +166,7 @@ export class InventoryService {
           )
           .map((category) => ({
             ...category,
+            subCategories: groupInventorySubcategories(category.products),
             products: category.products.sort((left, right) =>
               left.name.localeCompare(right.name, 'es'),
             ),

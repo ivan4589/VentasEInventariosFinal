@@ -69,6 +69,7 @@ describe('ReportsService', () => {
       },
       details: [
         {
+          productId: 'product-wafles',
           quantity: 10,
           unitPrice: 110,
           subtotal: 1100,
@@ -99,5 +100,30 @@ describe('ReportsService', () => {
       'venta-20260825-008.pdf',
       expect.any(Buffer),
     );
+  });
+
+  it('el generador existente imprime grupos y Varios manteniendo los totales guardados', async () => {
+    const sale = {
+      id: 'sale-grouped', saleNumber: 'TEST-GROUPED', date: new Date('2026-10-13T12:00:00Z'),
+      subtotal: 545, discount: 10, total: 535, paidAmount: 100, balance: 435,
+      client: { fullName: 'Cliente de prueba', location: { name: 'Local' } },
+      details: [
+        { productId: 'a', quantity: 1, unitPrice: 185, subtotal: 185, product: { name: 'Corbata', subCategory: { id: 's', name: 'Fideo arroba' } } },
+        { productId: 'b', quantity: 2, unitPrice: 180, subtotal: 360, product: { name: 'Tornillo', subCategory: { id: 's', name: 'Fideo arroba' } } },
+      ],
+    };
+    const original = JSON.stringify(sale);
+    prisma.sale.findUnique.mockResolvedValue(sale);
+    await service.generateSalePDF(sale.id);
+    const html = (renderPdf as jest.Mock).mock.calls[0][0];
+    expect(html).toContain('Fideo arroba');
+    expect(html).toContain('Varios');
+    expect(html).toContain('545.00');
+    expect(html).toContain('535.00 Bs.');
+    expect(html).toContain('10.00 Bs.');
+    expect(html).not.toContain('Corbata');
+    expect(html).not.toContain('Tornillo');
+    expect(JSON.stringify(sale)).toBe(original);
+    expect(prisma.sale.findUnique).toHaveBeenCalledWith(expect.objectContaining({ include: expect.objectContaining({ details: { include: { product: { include: { subCategory: true } } } } }) }));
   });
 });

@@ -42,6 +42,7 @@ export interface SendSaleWhatsAppResult {
 
 @Injectable()
 export class WhatsAppService {
+  private readonly activeSends = new Set<string>();
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -247,6 +248,18 @@ export class WhatsAppService {
     userId: number,
     resend = false,
   ): Promise<SendSaleWhatsAppResult> {
+    if (this.activeSends.has(saleId)) {
+      throw new ConflictException('El envío de esta nota ya está en curso');
+    }
+    this.activeSends.add(saleId);
+    try {
+      return await this.sendSaleDocumentOnce(saleId, userId, resend);
+    } finally {
+      this.activeSends.delete(saleId);
+    }
+  }
+
+  private async sendSaleDocumentOnce(saleId: string, userId: number, resend: boolean): Promise<SendSaleWhatsAppResult> {
     const sale = await this.prisma.sale.findUnique({
       where: {
         id: saleId,
