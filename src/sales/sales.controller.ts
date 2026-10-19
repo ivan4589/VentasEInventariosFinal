@@ -185,8 +185,26 @@ export class SalesController {
   @Post(':id/bonus-returns')
   @Roles($Enums.Role.ADMIN)
   @Permissions(PERMISSIONS.SALES_CANCEL)
-  async returnBonuses(@Param('id') id:string, @Body() dto:ReturnBonusDto, @Request() req:any) {
-    return this.salesService.returnBonusUnits(id,req.user.id,dto.bonuses);
+  async returnBonuses(
+    @Param('id') id: string,
+    @Body() dto: ReturnBonusDto,
+    @Request() req: any,
+    @Headers('idempotency-key') operationKey?: string,
+  ) {
+    const reason = this.integrity.reason(dto.reason, 'devolver una bonificación');
+    return this.integrity.run({
+      operationKey,
+      locks: [`sale:${id}`],
+      userId: req.user.id,
+      action: 'SALE_BONUS_RETURNED',
+      entityType: 'SALE_BONUS_RETURN',
+      reason,
+      execute: async () => {
+        const value = await this.salesService.returnBonusUnits(id, req.user.id, dto.bonuses, reason);
+        return {entityId: id, value, details: {returned: value.returned}};
+      },
+      resolveExisting: async () => ({saleId: id, returned: dto.bonuses}),
+    });
   }
 
   @Post(':id/returns')
