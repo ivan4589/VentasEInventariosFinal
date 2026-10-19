@@ -753,6 +753,8 @@ export class SalesService {
   ): Promise<SaleResponseDto> {
     await this.prisma.$transaction(
       async (prisma) => {
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint)`;
+
         const centralWarehouse =
           await this.getCentralWarehouse(prisma);
         const sale =
@@ -971,6 +973,8 @@ export class SalesService {
 
     await this.prisma.$transaction(
       async (prisma) => {
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint)`;
+
         if (detailsToUpdate) {
           const {
             centralWarehouse,
@@ -1159,6 +1163,8 @@ export class SalesService {
 
     await this.prisma.$transaction(
       async (prisma) => {
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint)`;
+
         const centralWarehouse =
           await this.getCentralWarehouse(prisma);
 
@@ -1526,6 +1532,8 @@ export class SalesService {
     const result =
       await this.prisma.$transaction(
         async (prisma) => {
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${saleId})::bigint)`;
+
           const centralWarehouse =
             await this.getCentralWarehouse(prisma);
           const saleReturn =
