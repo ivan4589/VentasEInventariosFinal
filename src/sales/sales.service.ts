@@ -820,37 +820,7 @@ export class SalesService {
             );
           }
 
-          const updatedCentralStock =
-            await prisma.warehouseStock.update({
-              where: {
-                id: centralStock.id,
-              },
-              data: {
-                stock: {
-                  decrement: detail.quantity,
-                },
-                reservedStock: {
-                  decrement: detail.quantity,
-                },
-              },
-              select: {
-                stock: true,
-              },
-            });
-
-          await prisma.product.update({
-            where: {
-              id: detail.productId,
-            },
-            data: {
-              stock: {
-                decrement: detail.quantity,
-              },
-              reservedStock: {
-                decrement: detail.quantity,
-              },
-            },
-          });
+          const confirmedStock = await this.consumeCentralStock(prisma,centralWarehouse.id,detail.productId,detail.quantity);
 
           await prisma.inventoryMovement.create({
             data: {
@@ -860,7 +830,7 @@ export class SalesService {
               type: $Enums.InventoryMovementType.SALE_OUT,
               quantity: detail.quantity,
               previousStock: centralStock.stock,
-              newStock: updatedCentralStock.stock,
+              newStock: confirmedStock,
               referenceId: sale.id,
               observations: `Venta ${sale.saleNumber} confirmada`,
             },
