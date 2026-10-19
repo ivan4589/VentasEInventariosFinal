@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsInt, IsString, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsInt, IsNotEmpty, IsString, Min, ValidateNested } from 'class-validator';
 
 export class ReturnBonusDetailDto {
   @IsString()
@@ -11,6 +11,10 @@ export class ReturnBonusDetailDto {
 }
 
 export class ReturnBonusDto {
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({each:true})
