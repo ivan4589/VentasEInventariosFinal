@@ -1345,6 +1345,46 @@ export class SalesService {
     return this.findOne(id);
   }
 
+
+  async returnBonusUnits(saleId: string, userId: number, allocations: Array<{bonusDetailId:string;quantity:number}>) {
+    if (!allocations?.length) throw new BadRequestException('Selecciona las bonificaciones devueltas');
+    if (new Set(allocations.map(a=>a.bonusDetailId)).size!==allocations.length ||
+      allocations.some(a=>!a.bonusDetailId || !Number.isSafeInteger(a.quantity) || a.quantity<=0)) {
+      throw new BadRequestException('Cantidades o registros duplicados en devolución de regalos');
+    }
+    return this.prisma.$transaction(async prisma=>{
+      // Serialize return and cancellation operations on this sale.
+      await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${saleId})::bigint)`;
+      const sale=await prisma.sale.findUnique({where:{id:saleId},include:{bonusDetails:true}});
+      if(!sale || sale.status!==$Enums.SaleStatus.CONFIRMED)
+        throw new BadRequestException('Solo es posible devolver regalos de ventas confirmadas');
+      const central=await this.getCentralWarehouse(prisma);
+      for(const item of allocations){
+        const gift=sale.bonusDetails.find(d=>d.id===item.bonusDetailId);
+        if(!gift || item.quantity>gift.quantity-gift.returnedQuantity)
+          throw new BadRequestException('Cantidad bonificada no disponible para devolución');
+        const changed=await prisma.saleBonusDetail.updateMany({where:{
+          id:gift.id,returnedQuantity:{lte:gift.quantity-item.quantity}
+        },data:{returnedQuantity:{increment:item.quantity}}});
+        if(changed.count!==1) throw new BadRequestException('La devolución de regalos ya fue registrada');
+        const before=await prisma.warehouseStock.findUnique({where:{warehouseId_productId:{warehouseId:central.id,productId:gift.productId}}});
+        const after=await prisma.warehouseStock.upsert({
+          where:{warehouseId_productId:{warehouseId:central.id,productId:gift.productId}},
+          create:{warehouseId:central.id,productId:gift.productId,stock:item.quantity},
+          update:{stock:{increment:item.quantity}}
+        });
+        await prisma.product.update({where:{id:gift.productId},data:{stock:{increment:item.quantity}}});
+        await prisma.inventoryMovement.create({data:{
+          warehouseId:central.id,productId:gift.productId,userId,
+          type:$Enums.InventoryMovementType.BONUS_RETURN_IN,quantity:item.quantity,
+          previousStock:before?.stock||0,newStock:after.stock,referenceId:saleId,
+          observations:`Devolución autorizada de regalo de venta ${sale.saleNumber}`
+        }});
+      }
+      return {saleId,returned:allocations};
+    });
+  }
+
   async createReturn(
     saleId: string,
     dto: CreateSaleReturnDto,
