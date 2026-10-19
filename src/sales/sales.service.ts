@@ -478,6 +478,45 @@ export class SalesService {
   }
 
 
+
+  /**
+   * Conditional inventory reservation. Checks the warehouse balance inside the
+   * SQL UPDATE itself, avoiding stale read/modify/write races.
+   */
+  private async reserveCentralStock(prisma: any, warehouseId: string, productId: string, quantity: number) {
+    const affected = await prisma.$executeRaw`
+      UPDATE "warehouse_stocks"
+      SET "reservedStock" = "reservedStock" + ${quantity},
+          "updatedAt" = NOW()
+      WHERE "warehouseId" = ${warehouseId}
+        AND "productId" = ${productId}
+        AND "stock" - "reservedStock" >= ${quantity}
+    `;
+    if (affected !== 1) {
+      throw new BadRequestException('Stock insuficiente para reservar venta y bonificaciones');
+    }
+    await prisma.product.update({where:{id:productId},data:{reservedStock:{increment:quantity}}});
+  }
+
+  private async consumeCentralStock(prisma: any, warehouseId: string, productId: string, quantity: number) {
+    const affected = await prisma.$executeRaw`
+      UPDATE "warehouse_stocks"
+      SET "stock" = "stock" - ${quantity},
+          "reservedStock" = "reservedStock" - ${quantity},
+          "updatedAt" = NOW()
+      WHERE "warehouseId" = ${warehouseId}
+        AND "productId" = ${productId}
+        AND "stock" >= ${quantity}
+        AND "reservedStock" >= ${quantity}
+    `;
+    if (affected !== 1) {
+      throw new BadRequestException('Stock o reserva insuficiente al confirmar');
+    }
+    await prisma.product.update({where:{id:productId},data:{stock:{decrement:quantity},reservedStock:{decrement:quantity}}});
+    const stock = await prisma.warehouseStock.findUniqueOrThrow({where:{warehouseId_productId:{warehouseId,productId}}});
+    return stock.stock as number;
+  }
+
   private async prepareBonuses(
     sold: Array<{productId: string; quantity: number}>,
     allocations: BonusAllocationDto[],
@@ -638,35 +677,10 @@ export class SalesService {
     const sale = await this.prisma.$transaction(
       async (prisma) => {
         for (const detail of preparedDetails) {
-          await prisma.warehouseStock.update({
-            where: {
-              warehouseId_productId: {
-                warehouseId: centralWarehouse.id,
-                productId: detail.productId,
-              },
-            },
-            data: {
-              reservedStock: {
-                increment: detail.quantity,
-              },
-            },
-          });
-
-          await prisma.product.update({
-            where: {
-              id: detail.productId,
-            },
-            data: {
-              reservedStock: {
-                increment: detail.quantity,
-              },
-            },
-          });
+          await this.reserveCentralStock(prisma,centralWarehouse.id,detail.productId,detail.quantity);
         }
-
         for (const bonus of preparedBonuses) {
-          await prisma.warehouseStock.update({ where: {warehouseId_productId:{warehouseId:centralWarehouse.id,productId:bonus.productId}}, data:{reservedStock:{increment:bonus.quantity}} });
-          await prisma.product.update({where:{id:bonus.productId},data:{reservedStock:{increment:bonus.quantity}}});
+          await this.reserveCentralStock(prisma,centralWarehouse.id,bonus.productId,bonus.quantity);
         }
 
         const createdSale =
@@ -857,10 +871,9 @@ export class SalesService {
         for (const bonus of sale.bonusDetails) {
           const row = await prisma.warehouseStock.findUnique({ where: {warehouseId_productId:{warehouseId:centralWarehouse.id,productId:bonus.productId}} });
           if (!row || row.stock < bonus.quantity || row.reservedStock < bonus.quantity) throw new BadRequestException('Stock o reserva de bonificación insuficiente');
-          const updated = await prisma.warehouseStock.update({where:{id:row.id},data:{stock:{decrement:bonus.quantity},reservedStock:{decrement:bonus.quantity}}});
-          await prisma.product.update({where:{id:bonus.productId},data:{stock:{decrement:bonus.quantity},reservedStock:{decrement:bonus.quantity}}});
+          const newStock = await this.consumeCentralStock(prisma,centralWarehouse.id,bonus.productId,bonus.quantity);
           await prisma.inventoryMovement.create({data:{warehouseId:centralWarehouse.id,productId:bonus.productId,userId,
-            type:$Enums.InventoryMovementType.BONUS_OUT,quantity:bonus.quantity,previousStock:row.stock,newStock:updated.stock,referenceId:id,
+            type:$Enums.InventoryMovementType.BONUS_OUT,quantity:bonus.quantity,previousStock:row.stock,newStock,referenceId:id,
             observations:`Bonificación de venta ${sale.saleNumber}`}});
         }
 
