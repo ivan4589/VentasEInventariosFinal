@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { SaveBonusRuleDto } from './bonus-rules.controller';
+import type { SaveBonusRuleDto } from './bonus-rules.controller';
 
 @Injectable()
 export class BonusRulesService {
