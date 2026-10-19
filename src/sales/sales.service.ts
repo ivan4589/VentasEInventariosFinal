@@ -968,7 +968,7 @@ export class SalesService {
           }))
         : undefined);
 
-    const originalGiftAllocations = current.bonusDetails.map(g=>({productId:g.productId,quantity:g.quantity}));
+    const originalGiftAllocations = (current.bonusDetails ?? []).map(g=>({productId:g.productId,quantity:g.quantity}));
     const preparedBonuses = (detailsToUpdate || updateSaleDto.bonuses !== undefined) ? await this.prepareBonuses(detailsToUpdate || current.details.map(d=>({productId:d.productId,quantity:d.quantity})), updateSaleDto.bonuses ?? originalGiftAllocations, id) : undefined;
 
     await this.prisma.$transaction(
@@ -1019,7 +1019,7 @@ export class SalesService {
           }
 
           if (preparedBonuses) {
-            for (const gift of current.bonusDetails) {
+            for (const gift of current.bonusDetails ?? []) {
               await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{decrement:gift.quantity}}});
               await prisma.product.update({where:{id:gift.productId},data:{reservedStock:{decrement:gift.quantity}}});
             }
@@ -1059,7 +1059,7 @@ export class SalesService {
         if (preparedBonuses) {
           if (!detailsToUpdate) {
             const centralWarehouse=await this.getCentralWarehouse(prisma);
-            for (const gift of current.bonusDetails) {
+            for (const gift of current.bonusDetails ?? []) {
               await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{decrement:gift.quantity}}});
               await prisma.product.update({where:{id:gift.productId},data:{reservedStock:{decrement:gift.quantity}}});
             }
@@ -1288,7 +1288,7 @@ export class SalesService {
           }
         }
 
-        for (const gift of sale.bonusDetails) {
+        for (const gift of sale.bonusDetails ?? []) {
           const returnedRemaining=gift.quantity-gift.returnedQuantity;
           if (sale.status===$Enums.SaleStatus.PENDING) {
             await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{decrement:gift.quantity}}});
