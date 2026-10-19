@@ -1169,6 +1169,7 @@ export class SalesService {
               product: true,
             },
           },
+          bonusDetails: true,
         },
       });
 
@@ -1314,6 +1315,25 @@ export class SalesService {
           }
         }
 
+        for (const gift of sale.bonusDetails) {
+          const returnedRemaining=gift.quantity-gift.returnedQuantity;
+          if (sale.status===$Enums.SaleStatus.PENDING) {
+            await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{decrement:gift.quantity}}});
+            await prisma.product.update({where:{id:gift.productId},data:{reservedStock:{decrement:gift.quantity}}});
+          } else if (sale.status===$Enums.SaleStatus.CONFIRMED && returnedRemaining>0) {
+            const old=await prisma.warehouseStock.findUnique({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}}});
+            const updated=await prisma.warehouseStock.upsert({
+              where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},
+              create:{warehouseId:centralWarehouse.id,productId:gift.productId,stock:returnedRemaining},
+              update:{stock:{increment:returnedRemaining}}
+            });
+            await prisma.product.update({where:{id:gift.productId},data:{stock:{increment:returnedRemaining}}});
+            await prisma.inventoryMovement.create({data:{warehouseId:centralWarehouse.id,productId:gift.productId,userId,
+              type:$Enums.InventoryMovementType.BONUS_CANCEL_IN,quantity:returnedRemaining,previousStock:old?.stock||0,newStock:updated.stock,
+              referenceId:id,observations:`Anulación de bonificación ${sale.saleNumber}`}});
+          }
+        }
+
         await prisma.sale.update({
           where: {
             id,
@@ -1418,6 +1438,32 @@ export class SalesService {
       throw new BadRequestException(
         'Solo se aceptan devoluciones de ventas confirmadas',
       );
+    }
+
+    // Prevent an outstanding gifted entitlement from becoming invalid after a partial return.
+    // Returning complimentary units requires a separate, audited workflow.
+    const gifts=await this.prisma.saleBonusDetail.findMany({where:{saleId}});
+    if(gifts.length) {
+      const original = await this.prisma.saleDetail.findMany({where:{saleId},include:{product:{select:{subCategoryId:true}}}});
+      const returnedByDetail=new Map<string,number>();
+      for(const row of dto.details) returnedByDetail.set(row.saleDetailId,(returnedByDetail.get(row.saleDetailId)||0)+row.quantity);
+      const eligible=new Map<string,number>();
+      for(const row of original){
+        const category=row.product.subCategoryId;
+        if(!category)continue;
+        const remaining=row.quantity-row.returnedQuantity-(returnedByDetail.get(row.id)||0);
+        eligible.set(category,(eligible.get(category)||0)+remaining);
+      }
+      const byCat=new Map<string,{minimum:number;reward:number;gifts:number}>();
+      for(const gift of gifts){
+        const row=byCat.get(gift.subCategoryId)||{minimum:gift.minimumQuantity,reward:gift.bonusQuantity,gifts:0};
+        row.gifts+=gift.quantity-gift.returnedQuantity;
+        byCat.set(gift.subCategoryId,row);
+      }
+      for(const [cat,rule] of byCat){
+        const allowed=Math.floor(Math.max(0,eligible.get(cat)||0)/rule.minimum)*rule.reward;
+        if(rule.gifts>allowed) throw new BadRequestException('La devolución reduce el derecho a bonificaciones. Regulariza primero las unidades gratuitas con autorización administrativa.');
+      }
     }
 
     const detailMap = new Map(
