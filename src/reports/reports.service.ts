@@ -376,7 +376,7 @@ export class ReportsService {
       .join('');
 
     const groupedGifts = new Map<string,{name:string;quantity:number}>();
-    for (const gift of sale.bonusDetails) {
+    for (const gift of sale.bonusDetails ?? []) {
       const name=gift.product.subCategory?.name || gift.product.name;
       const key=gift.subCategoryId;
       const current=groupedGifts.get(key);
