@@ -37,8 +37,9 @@ function createPrisma() {
       }),
     },
     warehouseStock: {
-      findMany: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({stock:6}),
       update: jest.fn(),
       upsert: jest.fn(),
     },
