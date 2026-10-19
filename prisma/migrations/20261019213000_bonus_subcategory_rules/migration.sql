@@ -1,12 +1,4 @@
 -- Additive migration: does not modify existing sales or stock.
-CREATE TYPE "InventoryMovementType_new" AS ENUM (
-  'INITIAL_STOCK','PURCHASE_IN','PURCHASE_CANCEL_OUT','SALE_OUT',
-  'BONUS_OUT','BONUS_CANCEL_IN','BONUS_RETURN_IN','SALE_RETURN_IN',
-  'TRANSFER_IN','TRANSFER_OUT','TRANSFER_CANCEL_IN','TRANSFER_CANCEL_OUT',
-  'ADJUSTMENT_IN','ADJUSTMENT_OUT'
-);
--- Preserve existing enum labels and ordering with a safer, non-destructive alternative:
-DROP TYPE "InventoryMovementType_new";
 ALTER TYPE "InventoryMovementType" ADD VALUE IF NOT EXISTS 'BONUS_OUT';
 ALTER TYPE "InventoryMovementType" ADD VALUE IF NOT EXISTS 'BONUS_CANCEL_IN';
 ALTER TYPE "InventoryMovementType" ADD VALUE IF NOT EXISTS 'BONUS_RETURN_IN';
