@@ -530,6 +530,13 @@ export class SalesService {
         unitCostSnapshot:byId.get(item.productId)!.purchasePrice,
       });
     }
+    // Reject invalid gift products rather than silently filtering them out.
+    for (const gift of allocations) {
+      const found = byId.get(gift.productId);
+      if (!found || !rules.some(rule=>rule.subCategoryId===found.subCategoryId)) {
+        throw new BadRequestException('Regalo fuera de las subcategorías con promoción vigente');
+      }
+    }
     const expected = rules.reduce((n,rule)=>n+calculateBonusEntitlement(rule,sales),0);
     const actual = grants.reduce((n,b)=>n+b.quantity,0);
     if(expected!==actual || allocations.reduce((n,b)=>n+b.quantity,0)!==actual)
@@ -976,7 +983,8 @@ export class SalesService {
           }))
         : undefined);
 
-    const preparedBonuses = (detailsToUpdate || updateSaleDto.bonuses !== undefined) ? await this.prepareBonuses(detailsToUpdate || current.details.map(d=>({productId:d.productId,quantity:d.quantity})), updateSaleDto.bonuses || [], id) : undefined;
+    const originalGiftAllocations = current.bonusDetails.map(g=>({productId:g.productId,quantity:g.quantity}));
+    const preparedBonuses = (detailsToUpdate || updateSaleDto.bonuses !== undefined) ? await this.prepareBonuses(detailsToUpdate || current.details.map(d=>({productId:d.productId,quantity:d.quantity})), updateSaleDto.bonuses ?? originalGiftAllocations, id) : undefined;
 
     await this.prisma.$transaction(
       async (prisma) => {
