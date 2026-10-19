@@ -757,6 +757,7 @@ export class AnalyticsReportsService {
       where,
       include: {
         client: true,
+        bonusDetails: true,
         details: {
           include: {
             product: {
@@ -788,6 +789,7 @@ export class AnalyticsReportsService {
       {
         name: string;
         quantities: Map<string, number>;
+        bonusQuantities: Map<string, number>;
         total: number;
       }
     >();
@@ -796,6 +798,7 @@ export class AnalyticsReportsService {
       const client = clients.get(sale.clientId) || {
         name: sale.client.fullName,
         quantities: new Map<string, number>(),
+        bonusQuantities: new Map<string, number>(),
         total: 0,
       };
       client.total += sale.total;
@@ -806,6 +809,10 @@ export class AnalyticsReportsService {
           detail.productId,
           (client.quantities.get(detail.productId) || 0) + quantity,
         );
+      }
+      for (const gift of sale.bonusDetails) {
+        const quantity=Math.max(gift.quantity-gift.returnedQuantity,0);
+        client.bonusQuantities.set(gift.productId,(client.bonusQuantities.get(gift.productId)||0)+quantity);
       }
       clients.set(sale.clientId, client);
     }
