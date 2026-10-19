@@ -757,7 +757,7 @@ export class AnalyticsReportsService {
       where,
       include: {
         client: true,
-        bonusDetails: true,
+        bonusDetails: {include:{product:{include:{provider:true,category:true}}}},
         details: {
           include: {
             product: {
@@ -775,7 +775,10 @@ export class AnalyticsReportsService {
     const products = Array.from(
       new Map(
         sales.flatMap((sale) =>
-          sale.details.map((detail) => [detail.productId, detail.product]),
+          [
+            ...sale.details.map((detail) => [detail.productId, detail.product] as const),
+            ...sale.bonusDetails.map((gift)=>[gift.productId,gift.product] as const),
+          ],
         ),
       ).values(),
     ).sort(
