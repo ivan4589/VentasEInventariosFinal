@@ -502,6 +502,8 @@ export class SalesService {
     const grants: Array<{ productId:string; subCategoryId:string; quantity:number; minimumQuantity:number; bonusQuantity:number; unitCostSnapshot:number }> = [];
     const prior = currentSaleId ? await this.prisma.saleBonusDetail.findMany({ where: { saleId: currentSaleId } }) : [];
     const oldReserved = new Map<string,number>();
+    const oldSoldReserved = new Map<string,number>();
+    if(currentSaleId){for(const row of await this.prisma.saleDetail.findMany({where:{saleId:currentSaleId}})){oldSoldReserved.set(row.productId,(oldSoldReserved.get(row.productId)||0)+row.quantity);}}
     for (const row of prior) oldReserved.set(row.productId,(oldReserved.get(row.productId)||0)+row.quantity);
     const stocks = await this.prisma.warehouseStock.findMany({
       where: {warehouseId:warehouse.id,productId:{in:[...new Set([...soldIds,...giftedIds])]}},
@@ -518,7 +520,7 @@ export class SalesService {
         if (!product || !product.isActive) throw new BadRequestException('Producto de bonificación desactivado o inexistente');
         const stock=stockMap.get(a.productId);
         return { id:a.productId,subCategoryId:product.subCategoryId,
-          availableStock:(stock?.stock||0)-(stock?.reservedStock||0)+(oldReserved.get(a.productId)||0)-(soldQty.get(a.productId)||0) };
+          availableStock:(stock?.stock||0)-(stock?.reservedStock||0)+(oldReserved.get(a.productId)||0)+(oldSoldReserved.get(a.productId)||0)-(soldQty.get(a.productId)||0) };
       });
       try { validateBonusAllocation(rule,sales,eligibleAllocations,eligibleProducts); }
       catch(e) { throw new BadRequestException(e instanceof Error?e.message:'Bonificación inválida'); }
