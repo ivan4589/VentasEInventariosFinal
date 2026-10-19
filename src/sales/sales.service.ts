@@ -38,6 +38,7 @@ export class SalesService {
         },
       },
       payments: true,
+      bonusDetails: {include:{product:{include:{subCategory:true}}}},
       whatsappLogs: {
         orderBy: {
           createdAt: 'desc',
@@ -296,6 +297,7 @@ export class SalesService {
           subtotal: detail.subtotal,
         })) || [],
 
+      bonuses: sale.bonusDetails?.map((gift:any)=>({id:gift.id,productId:gift.productId,productName:gift.product?.name||'',subCategoryId:gift.subCategoryId,subCategoryName:gift.product?.subCategory?.name||'',quantity:gift.quantity,returnedQuantity:gift.returnedQuantity}))||[],
       createdAt: sale.createdAt,
       updatedAt: sale.updatedAt,
     };
