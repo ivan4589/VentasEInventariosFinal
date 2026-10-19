@@ -840,7 +840,7 @@ export class SalesService {
         }
 
 
-        for (const bonus of sale.bonusDetails) {
+        for (const bonus of sale.bonusDetails ?? []) {
           const row = await prisma.warehouseStock.findUnique({ where: {warehouseId_productId:{warehouseId:centralWarehouse.id,productId:bonus.productId}} });
           if (!row || row.stock < bonus.quantity || row.reservedStock < bonus.quantity) throw new BadRequestException('Stock o reserva de bonificación insuficiente');
           const newStock = await this.consumeCentralStock(prisma,centralWarehouse.id,bonus.productId,bonus.quantity);
