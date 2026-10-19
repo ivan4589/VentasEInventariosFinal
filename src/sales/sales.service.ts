@@ -1352,7 +1352,7 @@ export class SalesService {
   }
 
 
-  async returnBonusUnits(saleId: string, userId: number, allocations: Array<{bonusDetailId:string;quantity:number}>) {
+  async returnBonusUnits(saleId: string, userId: number, allocations: Array<{bonusDetailId:string;quantity:number}>, reason: string) {
     if (!allocations?.length) throw new BadRequestException('Selecciona las bonificaciones devueltas');
     if (new Set(allocations.map(a=>a.bonusDetailId)).size!==allocations.length ||
       allocations.some(a=>!a.bonusDetailId || !Number.isSafeInteger(a.quantity) || a.quantity<=0)) {
@@ -1384,7 +1384,7 @@ export class SalesService {
           warehouseId:central.id,productId:gift.productId,userId,
           type:$Enums.InventoryMovementType.BONUS_RETURN_IN,quantity:item.quantity,
           previousStock:before?.stock||0,newStock:after.stock,referenceId:saleId,
-          observations:`Devolución autorizada de regalo de venta ${sale.saleNumber}`
+          observations:`Devolución autorizada de regalo de venta ${sale.saleNumber}: ${reason}`
         }});
       }
       return {saleId,returned:allocations};
