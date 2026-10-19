@@ -753,7 +753,7 @@ export class SalesService {
   ): Promise<SaleResponseDto> {
     await this.prisma.$transaction(
       async (prisma) => {
-        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint)`;
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint) IS NULL AS locked`;
 
         const centralWarehouse =
           await this.getCentralWarehouse(prisma);
@@ -973,7 +973,7 @@ export class SalesService {
 
     await this.prisma.$transaction(
       async (prisma) => {
-        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint)`;
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint) IS NULL AS locked`;
 
         if (detailsToUpdate) {
           const {
@@ -1163,7 +1163,7 @@ export class SalesService {
 
     await this.prisma.$transaction(
       async (prisma) => {
-        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint)`;
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint) IS NULL AS locked`;
 
         const centralWarehouse =
           await this.getCentralWarehouse(prisma);
@@ -1360,7 +1360,7 @@ export class SalesService {
     }
     return this.prisma.$transaction(async prisma=>{
       // Serialize return and cancellation operations on this sale.
-      await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${saleId})::bigint)`;
+      await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${saleId})::bigint) IS NULL AS locked`;
       const sale=await prisma.sale.findUnique({where:{id:saleId},include:{bonusDetails:true}});
       if(!sale || sale.status!==$Enums.SaleStatus.CONFIRMED)
         throw new BadRequestException('Solo es posible devolver regalos de ventas confirmadas');
@@ -1532,7 +1532,7 @@ export class SalesService {
     const result =
       await this.prisma.$transaction(
         async (prisma) => {
-        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${saleId})::bigint)`;
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${saleId})::bigint) IS NULL AS locked`;
 
           const centralWarehouse =
             await this.getCentralWarehouse(prisma);
