@@ -6,7 +6,7 @@ export class BonusReportService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getReport(dateFrom: string, dateTo: string) {
-    const parse = (value:string, end:boolean) => /^\\d{4}-\\d{2}-\\d{2}$/.test(value)
+    const parse = (value:string, end:boolean) => /^\d{4}-\d{2}-\d{2}$/.test(value)
       ? new Date(value + (end ? 'T23:59:59.999-04:00' : 'T00:00:00.000-04:00'))
       : new Date(value);
     const from = parse(dateFrom,false);
