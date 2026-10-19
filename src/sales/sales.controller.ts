@@ -26,6 +26,7 @@ import { CreateSaleReturnDto } from './dto/create-sale-return.dto';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { SendSaleWhatsAppDto } from './dto/send-sale-whatsapp.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
+import { ReturnBonusDto } from './dto/return-bonus.dto';
 import { SalesService } from './sales.service';
 import { WhatsAppService } from './whatsapp.service';
 
@@ -179,6 +180,13 @@ export class SalesController {
       req.user.id,
       dto.resend ?? false,
     );
+  }
+
+  @Post(':id/bonus-returns')
+  @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.SALES_CANCEL)
+  async returnBonuses(@Param('id') id:string, @Body() dto:ReturnBonusDto, @Request() req:any) {
+    return this.salesService.returnBonusUnits(id,req.user.id,dto.bonuses);
   }
 
   @Post(':id/returns')
