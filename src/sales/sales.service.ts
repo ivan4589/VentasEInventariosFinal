@@ -7,6 +7,8 @@ import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService } from '../reports/reports.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { calculateBonusEntitlement, validateBonusAllocation } from './bonuses/bonus-calculator';
+import { BonusAllocationDto } from './dto/bonus-allocation.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { CreateSaleReturnDto } from './dto/create-sale-return.dto';
 import { SaleResponseDto } from './dto/sale-response.dto';
@@ -473,6 +475,64 @@ export class SalesService {
     };
   }
 
+
+  private async prepareBonuses(
+    sold: Array<{productId: string; quantity: number}>,
+    allocations: BonusAllocationDto[],
+    currentSaleId?: string,
+  ) {
+    const warehouse = await this.getCentralWarehouse();
+    const soldIds = [...new Set(sold.map(d => d.productId))];
+    const giftedIds = [...new Set(allocations.map(d => d.productId))];
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: [...new Set([...soldIds, ...giftedIds])] } },
+      select: { id: true, name: true, subCategoryId: true, isActive: true, purchasePrice: true },
+    });
+    const byId = new Map(products.map(p => [p.id, p]));
+    if (sold.some(d => !byId.has(d.productId))) throw new BadRequestException('Producto vendido no encontrado');
+    const sales = sold.map(d => ({...d, subCategoryId: byId.get(d.productId)!.subCategoryId}));
+    const categories = [...new Set(sales.map(p => p.subCategoryId).filter((id): id is string => !!id))];
+    const now = new Date();
+    const rules = await this.prisma.bonusRule.findMany({ where: {
+      subCategoryId: { in: categories }, isActive: true,
+      AND: [{OR:[{validFrom:null},{validFrom:{lte:now}}]},{OR:[{validUntil:null},{validUntil:{gte:now}}]}],
+    }});
+    const grants: Array<{ productId:string; subCategoryId:string; quantity:number; minimumQuantity:number; bonusQuantity:number; unitCostSnapshot:number }> = [];
+    const prior = currentSaleId ? await this.prisma.saleBonusDetail.findMany({ where: { saleId: currentSaleId } }) : [];
+    const oldReserved = new Map<string,number>();
+    for (const row of prior) oldReserved.set(row.productId,(oldReserved.get(row.productId)||0)+row.quantity);
+    const stocks = await this.prisma.warehouseStock.findMany({
+      where: {warehouseId:warehouse.id,productId:{in:[...new Set([...soldIds,...giftedIds])]}},
+    });
+    const stockMap = new Map(stocks.map(v=>[v.productId,v]));
+    const soldQty = new Map<string,number>();
+    for (const d of sold) soldQty.set(d.productId,(soldQty.get(d.productId)||0)+d.quantity);
+    // No rule, no gift: legacy sales remain fully compatible.
+    if (!rules.length && allocations.length) throw new BadRequestException('No hay promoción vigente para la bonificación');
+    for (const rule of rules) {
+      const eligibleAllocations = allocations.filter(a=>byId.get(a.productId)?.subCategoryId===rule.subCategoryId);
+      const eligibleProducts = eligibleAllocations.map(a => {
+        const product=byId.get(a.productId);
+        if (!product || !product.isActive) throw new BadRequestException('Producto de bonificación desactivado o inexistente');
+        const stock=stockMap.get(a.productId);
+        return { id:a.productId,subCategoryId:product.subCategoryId,
+          availableStock:(stock?.stock||0)-(stock?.reservedStock||0)+(oldReserved.get(a.productId)||0)-(soldQty.get(a.productId)||0) };
+      });
+      try { validateBonusAllocation(rule,sales,eligibleAllocations,eligibleProducts); }
+      catch(e) { throw new BadRequestException(e instanceof Error?e.message:'Bonificación inválida'); }
+      for (const item of eligibleAllocations) grants.push({
+        productId:item.productId,subCategoryId:rule.subCategoryId,quantity:item.quantity,
+        minimumQuantity:rule.minimumQuantity,bonusQuantity:rule.bonusQuantity,
+        unitCostSnapshot:byId.get(item.productId)!.purchasePrice,
+      });
+    }
+    const expected = rules.reduce((n,rule)=>n+calculateBonusEntitlement(rule,sales),0);
+    const actual = grants.reduce((n,b)=>n+b.quantity,0);
+    if(expected!==actual || allocations.reduce((n,b)=>n+b.quantity,0)!==actual)
+      throw new BadRequestException('Bonificaciones sin asignar o fuera de la subcategoría');
+    return grants;
+  }
+
   async create(
     createSaleDto: CreateSaleDto,
     userId: number,
@@ -519,6 +579,8 @@ export class SalesService {
         undefined,
         userRole,
       );
+
+    const preparedBonuses = await this.prepareBonuses(details, createSaleDto.bonuses || []);
 
     const subtotal = this.roundMoney(
       preparedDetails.reduce(
@@ -591,6 +653,11 @@ export class SalesService {
           });
         }
 
+        for (const bonus of preparedBonuses) {
+          await prisma.warehouseStock.update({ where: {warehouseId_productId:{warehouseId:centralWarehouse.id,productId:bonus.productId}}, data:{reservedStock:{increment:bonus.quantity}} });
+          await prisma.product.update({where:{id:bonus.productId},data:{reservedStock:{increment:bonus.quantity}}});
+        }
+
         const createdSale =
           await prisma.sale.create({
             data: {
@@ -607,6 +674,7 @@ export class SalesService {
               discount,
               total,
               observations,
+              bonusDetails: { create: preparedBonuses },
               details: {
                 create: preparedDetails.map(
                   (detail) => ({
@@ -673,6 +741,7 @@ export class SalesService {
                   product: true,
                 },
               },
+              bonusDetails: {include:{product:true}},
             },
           });
 
@@ -773,6 +842,17 @@ export class SalesService {
           });
         }
 
+
+        for (const bonus of sale.bonusDetails) {
+          const row = await prisma.warehouseStock.findUnique({ where: {warehouseId_productId:{warehouseId:centralWarehouse.id,productId:bonus.productId}} });
+          if (!row || row.stock < bonus.quantity || row.reservedStock < bonus.quantity) throw new BadRequestException('Stock o reserva de bonificación insuficiente');
+          const updated = await prisma.warehouseStock.update({where:{id:row.id},data:{stock:{decrement:bonus.quantity},reservedStock:{decrement:bonus.quantity}}});
+          await prisma.product.update({where:{id:bonus.productId},data:{stock:{decrement:bonus.quantity},reservedStock:{decrement:bonus.quantity}}});
+          await prisma.inventoryMovement.create({data:{warehouseId:centralWarehouse.id,productId:bonus.productId,userId,
+            type:$Enums.InventoryMovementType.BONUS_OUT,quantity:bonus.quantity,previousStock:row.stock,newStock:updated.stock,referenceId:id,
+            observations:`Bonificación de venta ${sale.saleNumber}`}});
+        }
+
         await prisma.sale.update({
           where: {
             id,
@@ -828,6 +908,7 @@ export class SalesService {
         },
         include: {
           details: true,
+          bonusDetails: true,
         },
       });
 
@@ -891,6 +972,8 @@ export class SalesService {
           }))
         : undefined);
 
+    const preparedBonuses = (detailsToUpdate || updateSaleDto.bonuses !== undefined) ? await this.prepareBonuses(detailsToUpdate || current.details.map(d=>({productId:d.productId,quantity:d.quantity})), updateSaleDto.bonuses || [], id) : undefined;
+
     await this.prisma.$transaction(
       async (prisma) => {
         if (detailsToUpdate) {
@@ -936,6 +1019,13 @@ export class SalesService {
             });
           }
 
+          if (preparedBonuses) {
+            for (const gift of current.bonusDetails) {
+              await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{decrement:gift.quantity}}});
+              await prisma.product.update({where:{id:gift.productId},data:{reservedStock:{decrement:gift.quantity}}});
+            }
+            await prisma.saleBonusDetail.deleteMany({where:{saleId:id}});
+          }
           await prisma.saleDetail.deleteMany({
             where: {
               saleId: id,
@@ -994,6 +1084,22 @@ export class SalesService {
           );
         }
 
+        if (preparedBonuses) {
+          if (!detailsToUpdate) {
+            const centralWarehouse=await this.getCentralWarehouse(prisma);
+            for (const gift of current.bonusDetails) {
+              await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{decrement:gift.quantity}}});
+              await prisma.product.update({where:{id:gift.productId},data:{reservedStock:{decrement:gift.quantity}}});
+            }
+            await prisma.saleBonusDetail.deleteMany({where:{saleId:id}});
+          }
+          const centralWarehouse=await this.getCentralWarehouse(prisma);
+          for (const gift of preparedBonuses) {
+            await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{increment:gift.quantity}}});
+            await prisma.product.update({where:{id:gift.productId},data:{reservedStock:{increment:gift.quantity}}});
+          }
+          await prisma.saleBonusDetail.createMany({data:preparedBonuses.map(g=>({...g,saleId:id}))});
+        }
         const total = this.roundMoney(
           newSubtotal - finalDiscount,
         );
