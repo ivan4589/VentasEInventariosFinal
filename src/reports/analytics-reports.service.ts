@@ -1846,6 +1846,7 @@ export class AnalyticsReportsService {
       },
       include: {
         details: { include: { product: true } },
+        bonusDetails: { include: { product: true } },
       },
     });
     const productMap = new Map<
@@ -1853,6 +1854,7 @@ export class AnalyticsReportsService {
       {
         name: string;
         quantity: number;
+        giftQuantity: number;
         revenue: number;
         cost: number;
       }
@@ -1863,6 +1865,7 @@ export class AnalyticsReportsService {
         const current = productMap.get(detail.productId) || {
           name: detail.product.name,
           quantity: 0,
+          giftQuantity: 0,
           revenue: 0,
           cost: 0,
         };
@@ -1871,11 +1874,19 @@ export class AnalyticsReportsService {
         current.cost += quantity * detail.product.purchasePrice;
         productMap.set(detail.productId, current);
       }
+      for (const gift of sale.bonusDetails) {
+        const giftQuantity=Math.max(gift.quantity-gift.returnedQuantity,0);
+        const current=productMap.get(gift.productId)||{name:gift.product.name,quantity:0,giftQuantity:0,revenue:0,cost:0};
+        current.giftQuantity+=giftQuantity;
+        current.cost+=giftQuantity*gift.unitCostSnapshot;
+        productMap.set(gift.productId,current);
+      }
     }
     const rows = Array.from(productMap.values())
       .map((product) => ({
         product: product.name,
         quantity: this.roundQuantity(product.quantity),
+        giftQuantity: this.roundQuantity(product.giftQuantity),
         revenue: this.roundMoney(product.revenue),
         cost: this.roundMoney(product.cost),
         profit: this.roundMoney(product.revenue - product.cost),
@@ -1900,7 +1911,7 @@ export class AnalyticsReportsService {
           format: 'currency',
         },
         {
-          label: 'Costo estimado',
+          label: 'Costo estimado (incluye regalos)',
           value: this.roundMoney(cost),
           format: 'currency',
         },
@@ -1919,6 +1930,7 @@ export class AnalyticsReportsService {
           format: 'number',
           align: 'right',
         },
+        { key: 'giftQuantity', label: 'Bonificado', format: 'number', align: 'right' },
         {
           key: 'revenue',
           label: 'Ingresos',
