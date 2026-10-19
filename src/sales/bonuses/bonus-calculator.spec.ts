@@ -39,6 +39,24 @@ describe('bonus calculator', () => {
     expect(() => validateBonusAllocation(rule,items(50),[{productId:'a',quantity:1}],stock)).toThrow(/corresponde 2/);
     expect(() => validateBonusAllocation(rule,items(25),[{productId:'a',quantity:2}],stock)).toThrow(/corresponde 1/);
   });
+  it('does not count gifted units as sold items', () => {
+    expect(calculateBonusEntitlement(rule, items(50))).toBe(2);
+    // Gift allocations are intentionally excluded from the entitlement input.
+    expect(() => validateBonusAllocation(rule,items(50),[
+      {productId:'a',quantity:1},{productId:'b',quantity:1}
+    ],stock)).not.toThrow();
+  });
+  it('does not award a gift for unrelated or uncategorized products', () => {
+    expect(calculateBonusEntitlement(rule,[
+      {productId:'x',subCategoryId:'arroz',quantity:100},
+      {productId:'uncategorized',subCategoryId:null,quantity:100}
+    ])).toBe(0);
+  });
+  it('rejects a gift when stock is exhausted', () => {
+    expect(() => validateBonusAllocation(rule,items(25),[
+      {productId:'a',quantity:1}
+    ],[{id:'a',subCategoryId:'fideos',availableStock:0}])).toThrow(/Stock insuficiente/);
+  });
   it('rejects zero, fractional, and unsafe quantities', () => {
     expect(() => calculateBonusEntitlement(rule,items(0))).toThrow();
     expect(() => calculateBonusEntitlement(rule,items(1.5))).toThrow();
