@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { SaveBonusRuleDto } from './bonus-rules.controller';
+import type { SaveBonusRuleDto, UpdateBonusRuleDto } from './bonus-rules.controller';
 
 @Injectable()
 export class BonusRulesService {
@@ -16,11 +16,12 @@ export class BonusRulesService {
     await this.ensureNoActiveConflict(dto.subCategoryId, dto.isActive ?? true);
     return this.prisma.bonusRule.create({ data: dto });
   }
-  async update(id: string, dto: SaveBonusRuleDto) {
+  async update(id: string, dto: UpdateBonusRuleDto) {
     const current = await this.prisma.bonusRule.findUnique({ where: { id } });
     if (!current) throw new NotFoundException('Regla de bonificación no encontrada');
-    await this.ensureSubcategory(dto.subCategoryId);
-    await this.ensureNoActiveConflict(dto.subCategoryId, dto.isActive ?? current.isActive, id);
+    const subCategoryId = dto.subCategoryId ?? current.subCategoryId;
+    await this.ensureSubcategory(subCategoryId);
+    await this.ensureNoActiveConflict(subCategoryId, dto.isActive ?? current.isActive, id);
     return this.prisma.bonusRule.update({ where: { id }, data: dto });
   }
   private async ensureSubcategory(id: string) {
