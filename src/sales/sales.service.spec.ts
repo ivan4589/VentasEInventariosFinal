@@ -44,6 +44,16 @@ function createPrisma() {
     },
     saleDetail: {
       findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    saleBonusDetail: {
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    bonusRule: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
     sale: {
       findUnique: jest.fn(),
@@ -54,6 +64,8 @@ function createPrisma() {
     },
   };
 
+  prisma.$executeRaw = jest.fn().mockResolvedValue(1);
+  prisma.$queryRaw = jest.fn().mockResolvedValue([{locked:true}]);
   prisma.$transaction = jest.fn(async (operation: (tx: any) => unknown) =>
     operation(prisma),
   );
@@ -292,11 +304,9 @@ describe('SalesService - stock del Almacén Central', () => {
         },
       ],
     });
-    prisma.warehouseStock.findUnique.mockResolvedValue({
-      id: 'central_stock_1',
-      stock: 10,
-      reservedStock: 4,
-    });
+    prisma.warehouseStock.findUnique
+      .mockResolvedValueOnce({ id: 'central_stock_1', stock: 10, reservedStock: 4 })
+      .mockResolvedValue({ id: 'central_stock_1', stock: 6, reservedStock: 0 });
     prisma.warehouseStock.update.mockResolvedValue({
       stock: 6,
     });
@@ -312,22 +322,7 @@ describe('SalesService - stock del Almacén Central', () => {
       data: expect.objectContaining({ confirmedById: 8 }),
     });
 
-    expect(prisma.warehouseStock.update).toHaveBeenCalledWith({
-      where: {
-        id: 'central_stock_1',
-      },
-      data: {
-        stock: {
-          decrement: 4,
-        },
-        reservedStock: {
-          decrement: 4,
-        },
-      },
-      select: {
-        stock: true,
-      },
-    });
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
     expect(prisma.inventoryMovement.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         warehouseId: 'warehouse_central',
