@@ -43,4 +43,4 @@ jobs:
       - name: Compilar NestJS
         run: npm run build
       - name: Pruebas de bonificaciones
-        run: npm test -- --runInBand bonus-calculator
+        run: npm test -- --runInBand bonus-
