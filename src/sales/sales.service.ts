@@ -1028,34 +1028,7 @@ export class SalesService {
           });
 
           for (const newDetail of preparedDetails) {
-            await prisma.warehouseStock.update({
-              where: {
-                warehouseId_productId: {
-                  warehouseId:
-                    centralWarehouse.id,
-                  productId:
-                    newDetail.productId,
-                },
-              },
-              data: {
-                reservedStock: {
-                  increment:
-                    newDetail.quantity,
-                },
-              },
-            });
-
-            await prisma.product.update({
-              where: {
-                id: newDetail.productId,
-              },
-              data: {
-                reservedStock: {
-                  increment:
-                    newDetail.quantity,
-                },
-              },
-            });
+            await this.reserveCentralStock(prisma,centralWarehouse.id,newDetail.productId,newDetail.quantity);
           }
 
           await prisma.saleDetail.createMany({
@@ -1090,8 +1063,7 @@ export class SalesService {
           }
           const centralWarehouse=await this.getCentralWarehouse(prisma);
           for (const gift of preparedBonuses) {
-            await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{increment:gift.quantity}}});
-            await prisma.product.update({where:{id:gift.productId},data:{reservedStock:{increment:gift.quantity}}});
+            await this.reserveCentralStock(prisma,centralWarehouse.id,gift.productId,gift.quantity);
           }
           await prisma.saleBonusDetail.createMany({data:preparedBonuses.map(g=>({...g,saleId:id}))});
         }
