@@ -26,6 +26,7 @@ import { CreateSaleReturnDto } from './dto/create-sale-return.dto';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { SendSaleWhatsAppDto } from './dto/send-sale-whatsapp.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
+import { ReturnBonusDto } from './dto/return-bonus.dto';
 import { SalesService } from './sales.service';
 import { WhatsAppService } from './whatsapp.service';
 
@@ -179,6 +180,31 @@ export class SalesController {
       req.user.id,
       dto.resend ?? false,
     );
+  }
+
+  @Post(':id/bonus-returns')
+  @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.SALES_CANCEL)
+  async returnBonuses(
+    @Param('id') id: string,
+    @Body() dto: ReturnBonusDto,
+    @Request() req: any,
+    @Headers('idempotency-key') operationKey?: string,
+  ) {
+    const reason = this.integrity.reason(dto.reason, 'devolver una bonificación');
+    return this.integrity.run({
+      operationKey,
+      locks: [`sale:${id}`],
+      userId: req.user.id,
+      action: 'SALE_BONUS_RETURNED',
+      entityType: 'SALE_BONUS_RETURN',
+      reason,
+      execute: async () => {
+        const value = await this.salesService.returnBonusUnits(id, req.user.id, dto.bonuses, reason);
+        return {entityId: id, value, details: {returned: value.returned}};
+      },
+      resolveExisting: async () => ({saleId: id, returned: dto.bonuses}),
+    });
   }
 
   @Post(':id/returns')

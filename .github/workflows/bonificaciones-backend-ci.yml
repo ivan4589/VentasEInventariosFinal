@@ -1,0 +1,46 @@
+name: Validar backend bonificaciones
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  backend-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: inventory_test
+          POSTGRES_USER: inventory
+          POSTGRES_PASSWORD: inventory_test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U inventory -d inventory_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://inventory:inventory_test_only@localhost:5432/inventory_test?schema=public
+      NODE_ENV: test
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Validar esquema Prisma
+        run: npx prisma validate
+      - name: Generar cliente Prisma
+        run: npx prisma generate
+      - name: Verificar migraciones contra PostgreSQL de prueba
+        run: npx prisma migrate deploy
+      - name: Compilar NestJS
+        run: npm run build
+      - name: Pruebas de bonificaciones
+        run: npm test -- --runInBand bonus-

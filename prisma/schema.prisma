@@ -318,6 +318,8 @@ model SubCategory {
   categoryId String
   category   Category  @relation(fields: [categoryId], references: [id])
   products   Product[]
+  bonusRules BonusRule[]
+  bonusDetails SaleBonusDetail[]
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
@@ -358,6 +360,7 @@ model Product {
   deletedAt            DateTime?
   purchaseDetails      PurchaseDetail[]
   saleDetails          SaleDetail[]
+  bonusDetails         SaleBonusDetail[]
   saleReturnDetails    SaleReturnDetail[]
   warehouseStocks      WarehouseStock[]
   transferDetails      WarehouseTransferDetail[]
@@ -477,6 +480,7 @@ model Sale {
   pdfUrl               String?
   cancelledPdfUrl      String?
   details              SaleDetail[]
+  bonusDetails         SaleBonusDetail[]
   payments             Payment[]
   returns              SaleReturn[]
   collectionAssignment CollectionAssignment?
@@ -826,6 +830,9 @@ enum InventoryMovementType {
   PURCHASE_IN
   PURCHASE_CANCEL_OUT
   SALE_OUT
+  BONUS_OUT
+  BONUS_CANCEL_IN
+  BONUS_RETURN_IN
   SALE_RETURN_IN
   TRANSFER_IN
   TRANSFER_OUT
@@ -833,4 +840,44 @@ enum InventoryMovementType {
   TRANSFER_CANCEL_OUT
   ADJUSTMENT_IN
   ADJUSTMENT_OUT
+}
+
+/** A single currently-active rule per subcategory is enforced by service logic.
+ * Historical rule values are copied to each sale bonus detail on application.
+ */
+model BonusRule {
+  id              String      @id @default(cuid())
+  subCategoryId   String
+  subCategory     SubCategory @relation(fields: [subCategoryId], references: [id], onDelete: Restrict)
+  minimumQuantity Int
+  bonusQuantity   Int
+  isActive        Boolean     @default(true)
+  validFrom       DateTime?
+  validUntil      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([subCategoryId, isActive])
+  @@map("bonus_rules")
+}
+
+model SaleBonusDetail {
+  id                   String      @id @default(cuid())
+  saleId               String
+  sale                 Sale        @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  productId            String
+  product              Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  subCategoryId        String
+  subCategory          SubCategory @relation(fields: [subCategoryId], references: [id], onDelete: Restrict)
+  quantity             Int
+  returnedQuantity     Int         @default(0)
+  minimumQuantity      Int
+  bonusQuantity        Int
+  unitCostSnapshot     Float
+  createdAt            DateTime    @default(now())
+
+  @@index([saleId])
+  @@index([productId])
+  @@index([subCategoryId])
+  @@map("sale_bonus_details")
 }

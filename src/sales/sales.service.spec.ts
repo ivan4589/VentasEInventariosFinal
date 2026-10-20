@@ -37,12 +37,23 @@ function createPrisma() {
       }),
     },
     warehouseStock: {
-      findMany: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({stock:6}),
       update: jest.fn(),
       upsert: jest.fn(),
     },
     saleDetail: {
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    saleBonusDetail: {
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    bonusRule: {
       findMany: jest.fn().mockResolvedValue([]),
     },
     sale: {
@@ -54,6 +65,8 @@ function createPrisma() {
     },
   };
 
+  prisma.$executeRaw = jest.fn().mockResolvedValue(1);
+  prisma.$queryRaw = jest.fn().mockResolvedValue([{locked:true}]);
   prisma.$transaction = jest.fn(async (operation: (tx: any) => unknown) =>
     operation(prisma),
   );
@@ -62,6 +75,47 @@ function createPrisma() {
 }
 
 describe('SalesService - stock del Almacén Central', () => {
+  it('bloquea una reserva concurrente cuando SQL ya no encuentra disponibilidad', async () => {
+    const prisma=createPrisma();
+    prisma.$executeRaw.mockResolvedValue(0);
+    const service=new SalesService(prisma,{} as any);
+    await expect((service as any).reserveCentralStock(prisma,'warehouse_central','product_1',5)).rejects.toThrow('Stock insuficiente');
+    expect(prisma.product.update).not.toHaveBeenCalled();
+  });
+  it('bloquea la confirmación si la reserva fue consumida por otra operación', async () => {
+    const prisma=createPrisma();
+    prisma.$executeRaw.mockResolvedValue(0);
+    const service=new SalesService(prisma,{} as any);
+    await expect((service as any).consumeCentralStock(prisma,'warehouse_central','product_1',5)).rejects.toThrow('Stock o reserva insuficiente');
+    expect(prisma.product.update).not.toHaveBeenCalled();
+  });
+  it('devuelve físicamente regalos con cantidad parcial y registra movimiento auditado', async () => {
+    const prisma=createPrisma();
+    prisma.sale.findUnique.mockResolvedValue({id:'sale_1',saleNumber:'20261019-001',status:$Enums.SaleStatus.CONFIRMED,
+      bonusDetails:[{id:'bonus_1',productId:'product_1',quantity:2,returnedQuantity:0}]});
+    prisma.saleBonusDetail.updateMany=jest.fn().mockResolvedValue({count:1});
+    prisma.warehouseStock.findUnique.mockResolvedValue({stock:4});
+    prisma.warehouseStock.upsert.mockResolvedValue({stock:5});
+    const service=new SalesService(prisma,{} as any);
+    const result=await service.returnBonusUnits('sale_1',8,[{bonusDetailId:'bonus_1',quantity:1}],'Devolución física');
+    expect(result.returned).toEqual([{bonusDetailId:'bonus_1',quantity:1}]);
+    expect(prisma.saleBonusDetail.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where:expect.objectContaining({id:'bonus_1'}),
+      data:{returnedQuantity:{increment:1}},
+    }));
+    expect(prisma.inventoryMovement.create).toHaveBeenCalledWith({data:expect.objectContaining({
+      type:$Enums.InventoryMovementType.BONUS_RETURN_IN,quantity:1,userId:8,previousStock:4,newStock:5,
+      observations:expect.stringContaining('Devolución física'),
+    })});
+  });
+  it('rechaza la devolución de más regalos que los entregados', async () => {
+    const prisma=createPrisma();
+    prisma.sale.findUnique.mockResolvedValue({id:'sale_1',saleNumber:'20261019-001',status:$Enums.SaleStatus.CONFIRMED,
+      bonusDetails:[{id:'bonus_1',productId:'product_1',quantity:2,returnedQuantity:1}]});
+    const service=new SalesService(prisma,{} as any);
+    await expect(service.returnBonusUnits('sale_1',8,[{bonusDetailId:'bonus_1',quantity:2}],'Control')).rejects.toThrow('Cantidad bonificada');
+  });
+
   it.each([
     { priceMayorista: 0, minQuantityWholesale: 5 },
     { priceMayorista: 8, minQuantityWholesale: 0 },
@@ -292,11 +346,9 @@ describe('SalesService - stock del Almacén Central', () => {
         },
       ],
     });
-    prisma.warehouseStock.findUnique.mockResolvedValue({
-      id: 'central_stock_1',
-      stock: 10,
-      reservedStock: 4,
-    });
+    prisma.warehouseStock.findUnique
+      .mockResolvedValueOnce({ id: 'central_stock_1', stock: 10, reservedStock: 4 })
+      .mockResolvedValue({ id: 'central_stock_1', stock: 6, reservedStock: 0 });
     prisma.warehouseStock.update.mockResolvedValue({
       stock: 6,
     });
@@ -312,22 +364,7 @@ describe('SalesService - stock del Almacén Central', () => {
       data: expect.objectContaining({ confirmedById: 8 }),
     });
 
-    expect(prisma.warehouseStock.update).toHaveBeenCalledWith({
-      where: {
-        id: 'central_stock_1',
-      },
-      data: {
-        stock: {
-          decrement: 4,
-        },
-        reservedStock: {
-          decrement: 4,
-        },
-      },
-      select: {
-        stock: true,
-      },
-    });
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
     expect(prisma.inventoryMovement.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         warehouseId: 'warehouse_central',

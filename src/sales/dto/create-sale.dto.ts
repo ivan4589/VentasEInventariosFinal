@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { $Enums } from '../../../generated/prisma/client';
+import { BonusAllocationDto } from './bonus-allocation.dto';
 import { SaleDetailDto } from './sale-detail.dto';
 
 export class CreateSaleDto {
@@ -24,6 +25,12 @@ export class CreateSaleDto {
   @ValidateNested({ each: true })
   @Type(() => SaleDetailDto)
   details: SaleDetailDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BonusAllocationDto)
+  bonuses?: BonusAllocationDto[];
 
   @IsOptional()
   @Type(() => Number)

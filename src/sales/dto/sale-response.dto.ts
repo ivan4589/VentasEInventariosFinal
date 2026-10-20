@@ -48,6 +48,7 @@ export class SaleResponseDto {
   whatsappLastError?: string;
 
   details: SaleDetailResponseDto[];
+  bonuses: Array<{id:string;productId:string;productName:string;subCategoryId:string;subCategoryName:string;quantity:number;returnedQuantity:number}>;
 
   createdAt: Date;
   updatedAt: Date;

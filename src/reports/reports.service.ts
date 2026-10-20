@@ -351,6 +351,7 @@ export class ReportsService {
             product: { include: { subCategory: true } },
           },
         },
+        bonusDetails:{include:{product:{include:{subCategory:true}}}},
       },
     });
 
@@ -358,7 +359,7 @@ export class ReportsService {
       throw new NotFoundException('Venta no encontrada');
     }
 
-    const rows = buildSaleNoteLines(sale.details)
+    const paidRows = buildSaleNoteLines(sale.details)
       .map(
         (detail, index) => `
           <tr>
@@ -374,6 +375,20 @@ export class ReportsService {
       )
       .join('');
 
+    const groupedGifts = new Map<string,{name:string;quantity:number}>();
+    for (const gift of sale.bonusDetails ?? []) {
+      const name=gift.product.subCategory?.name || gift.product.name;
+      const key=gift.subCategoryId;
+      const current=groupedGifts.get(key);
+      groupedGifts.set(key,{name,quantity:(current?.quantity||0)+(gift.quantity-gift.returnedQuantity)});
+    }
+    const bonusRows=[...groupedGifts.values()].filter(g=>g.quantity>0).map((gift,index)=>`
+      <tr><td class="item-number">R${index+1}</td>
+      <td class="product-name">${this.escapeHtml('BONIFICACIÓN: '+gift.name)}</td>
+      <td class="quantity">${gift.quantity}</td>
+      <td class="number">GRATIS</td><td class="number subtotal">0.00</td></tr>
+    `).join('');
+    const rows=paidRows+bonusRows;
     const saleDate = new Date(sale.date).toLocaleDateString('es-BO');
     const logoDataUri = this.getSaleLogoDataUri();
     const statusBadge = isCancelled

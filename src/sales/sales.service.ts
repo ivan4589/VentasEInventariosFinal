@@ -7,6 +7,8 @@ import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService } from '../reports/reports.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { calculateBonusEntitlement, validateBonusAllocation } from './bonuses/bonus-calculator';
+import { BonusAllocationDto } from './dto/bonus-allocation.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { CreateSaleReturnDto } from './dto/create-sale-return.dto';
 import { SaleResponseDto } from './dto/sale-response.dto';
@@ -36,6 +38,7 @@ export class SalesService {
         },
       },
       payments: true,
+      bonusDetails: {include:{product:{include:{subCategory:true}}}},
       whatsappLogs: {
         orderBy: {
           createdAt: 'desc',
@@ -294,6 +297,7 @@ export class SalesService {
           subtotal: detail.subtotal,
         })) || [],
 
+      bonuses: sale.bonusDetails?.map((gift:any)=>({id:gift.id,productId:gift.productId,productName:gift.product?.name||'',subCategoryId:gift.subCategoryId,subCategoryName:gift.product?.subCategory?.name||'',quantity:gift.quantity,returnedQuantity:gift.returnedQuantity}))||[],
       createdAt: sale.createdAt,
       updatedAt: sale.updatedAt,
     };
@@ -473,6 +477,112 @@ export class SalesService {
     };
   }
 
+
+
+  /**
+   * Conditional inventory reservation. Checks the warehouse balance inside the
+   * SQL UPDATE itself, avoiding stale read/modify/write races.
+   */
+  private async reserveCentralStock(prisma: any, warehouseId: string, productId: string, quantity: number) {
+    const affected = await prisma.$executeRaw`
+      UPDATE "warehouse_stocks"
+      SET "reservedStock" = "reservedStock" + ${quantity},
+          "updatedAt" = NOW()
+      WHERE "warehouseId" = ${warehouseId}
+        AND "productId" = ${productId}
+        AND "stock" - "reservedStock" >= ${quantity}
+    `;
+    if (affected !== 1) {
+      throw new BadRequestException('Stock insuficiente para reservar venta y bonificaciones');
+    }
+    await prisma.product.update({where:{id:productId},data:{reservedStock:{increment:quantity}}});
+  }
+
+  private async consumeCentralStock(prisma: any, warehouseId: string, productId: string, quantity: number) {
+    const affected = await prisma.$executeRaw`
+      UPDATE "warehouse_stocks"
+      SET "stock" = "stock" - ${quantity},
+          "reservedStock" = "reservedStock" - ${quantity},
+          "updatedAt" = NOW()
+      WHERE "warehouseId" = ${warehouseId}
+        AND "productId" = ${productId}
+        AND "stock" >= ${quantity}
+        AND "reservedStock" >= ${quantity}
+    `;
+    if (affected !== 1) {
+      throw new BadRequestException('Stock o reserva insuficiente al confirmar');
+    }
+    await prisma.product.update({where:{id:productId},data:{stock:{decrement:quantity},reservedStock:{decrement:quantity}}});
+    const stock = await prisma.warehouseStock.findUniqueOrThrow({where:{warehouseId_productId:{warehouseId,productId}}});
+    return stock.stock as number;
+  }
+
+  private async prepareBonuses(
+    sold: Array<{productId: string; quantity: number}>,
+    allocations: BonusAllocationDto[],
+    currentSaleId?: string,
+  ) {
+    const warehouse = await this.getCentralWarehouse();
+    const soldIds = [...new Set(sold.map(d => d.productId))];
+    const giftedIds = [...new Set(allocations.map(d => d.productId))];
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: [...new Set([...soldIds, ...giftedIds])] } },
+      select: { id: true, name: true, subCategoryId: true, isActive: true, purchasePrice: true },
+    });
+    const byId = new Map(products.map(p => [p.id, p]));
+    if (sold.some(d => !byId.has(d.productId))) throw new BadRequestException('Producto vendido no encontrado');
+    const sales = sold.map(d => ({...d, subCategoryId: byId.get(d.productId)!.subCategoryId}));
+    const categories = [...new Set(sales.map(p => p.subCategoryId).filter((id): id is string => !!id))];
+    const now = new Date();
+    const rules = await this.prisma.bonusRule.findMany({ where: {
+      subCategoryId: { in: categories }, isActive: true,
+      AND: [{OR:[{validFrom:null},{validFrom:{lte:now}}]},{OR:[{validUntil:null},{validUntil:{gte:now}}]}],
+    }});
+    const grants: Array<{ productId:string; subCategoryId:string; quantity:number; minimumQuantity:number; bonusQuantity:number; unitCostSnapshot:number }> = [];
+    const prior = currentSaleId ? await this.prisma.saleBonusDetail.findMany({ where: { saleId: currentSaleId } }) : [];
+    const oldReserved = new Map<string,number>();
+    const oldSoldReserved = new Map<string,number>();
+    if(currentSaleId){for(const row of await this.prisma.saleDetail.findMany({where:{saleId:currentSaleId}})){oldSoldReserved.set(row.productId,(oldSoldReserved.get(row.productId)||0)+row.quantity);}}
+    for (const row of prior) oldReserved.set(row.productId,(oldReserved.get(row.productId)||0)+row.quantity);
+    const stocks = await this.prisma.warehouseStock.findMany({
+      where: {warehouseId:warehouse.id,productId:{in:[...new Set([...soldIds,...giftedIds])]}},
+    });
+    const stockMap = new Map(stocks.map(v=>[v.productId,v]));
+    const soldQty = new Map<string,number>();
+    for (const d of sold) soldQty.set(d.productId,(soldQty.get(d.productId)||0)+d.quantity);
+    // No rule, no gift: legacy sales remain fully compatible.
+    if (!rules.length && allocations.length) throw new BadRequestException('No hay promoción vigente para la bonificación');
+    for (const rule of rules) {
+      const eligibleAllocations = allocations.filter(a=>byId.get(a.productId)?.subCategoryId===rule.subCategoryId);
+      const eligibleProducts = eligibleAllocations.map(a => {
+        const product=byId.get(a.productId);
+        if (!product || !product.isActive) throw new BadRequestException('Producto de bonificación desactivado o inexistente');
+        const stock=stockMap.get(a.productId);
+        return { id:a.productId,subCategoryId:product.subCategoryId,
+          availableStock:(stock?.stock||0)-(stock?.reservedStock||0)+(oldReserved.get(a.productId)||0)+(oldSoldReserved.get(a.productId)||0)-(soldQty.get(a.productId)||0) };
+      });
+      try { validateBonusAllocation(rule,sales,eligibleAllocations,eligibleProducts); }
+      catch(e) { throw new BadRequestException(e instanceof Error?e.message:'Bonificación inválida'); }
+      for (const item of eligibleAllocations) grants.push({
+        productId:item.productId,subCategoryId:rule.subCategoryId,quantity:item.quantity,
+        minimumQuantity:rule.minimumQuantity,bonusQuantity:rule.bonusQuantity,
+        unitCostSnapshot:byId.get(item.productId)!.purchasePrice,
+      });
+    }
+    // Reject invalid gift products rather than silently filtering them out.
+    for (const gift of allocations) {
+      const found = byId.get(gift.productId);
+      if (!found || !rules.some(rule=>rule.subCategoryId===found.subCategoryId)) {
+        throw new BadRequestException('Regalo fuera de las subcategorías con promoción vigente');
+      }
+    }
+    const expected = rules.reduce((n,rule)=>n+calculateBonusEntitlement(rule,sales),0);
+    const actual = grants.reduce((n,b)=>n+b.quantity,0);
+    if(expected!==actual || allocations.reduce((n,b)=>n+b.quantity,0)!==actual)
+      throw new BadRequestException('Bonificaciones sin asignar o fuera de la subcategoría');
+    return grants;
+  }
+
   async create(
     createSaleDto: CreateSaleDto,
     userId: number,
@@ -520,6 +630,8 @@ export class SalesService {
         userRole,
       );
 
+    const preparedBonuses = await this.prepareBonuses(details, createSaleDto.bonuses || []);
+
     const subtotal = this.roundMoney(
       preparedDetails.reduce(
         (sum, detail) =>
@@ -565,30 +677,10 @@ export class SalesService {
     const sale = await this.prisma.$transaction(
       async (prisma) => {
         for (const detail of preparedDetails) {
-          await prisma.warehouseStock.update({
-            where: {
-              warehouseId_productId: {
-                warehouseId: centralWarehouse.id,
-                productId: detail.productId,
-              },
-            },
-            data: {
-              reservedStock: {
-                increment: detail.quantity,
-              },
-            },
-          });
-
-          await prisma.product.update({
-            where: {
-              id: detail.productId,
-            },
-            data: {
-              reservedStock: {
-                increment: detail.quantity,
-              },
-            },
-          });
+          await this.reserveCentralStock(prisma,centralWarehouse.id,detail.productId,detail.quantity);
+        }
+        for (const bonus of preparedBonuses) {
+          await this.reserveCentralStock(prisma,centralWarehouse.id,bonus.productId,bonus.quantity);
         }
 
         const createdSale =
@@ -607,6 +699,7 @@ export class SalesService {
               discount,
               total,
               observations,
+              bonusDetails: { create: preparedBonuses },
               details: {
                 create: preparedDetails.map(
                   (detail) => ({
@@ -660,6 +753,8 @@ export class SalesService {
   ): Promise<SaleResponseDto> {
     await this.prisma.$transaction(
       async (prisma) => {
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint) IS NULL AS locked`;
+
         const centralWarehouse =
           await this.getCentralWarehouse(prisma);
         const sale =
@@ -673,6 +768,7 @@ export class SalesService {
                   product: true,
                 },
               },
+              bonusDetails: {include:{product:true}},
             },
           });
 
@@ -726,37 +822,7 @@ export class SalesService {
             );
           }
 
-          const updatedCentralStock =
-            await prisma.warehouseStock.update({
-              where: {
-                id: centralStock.id,
-              },
-              data: {
-                stock: {
-                  decrement: detail.quantity,
-                },
-                reservedStock: {
-                  decrement: detail.quantity,
-                },
-              },
-              select: {
-                stock: true,
-              },
-            });
-
-          await prisma.product.update({
-            where: {
-              id: detail.productId,
-            },
-            data: {
-              stock: {
-                decrement: detail.quantity,
-              },
-              reservedStock: {
-                decrement: detail.quantity,
-              },
-            },
-          });
+          const confirmedStock = await this.consumeCentralStock(prisma,centralWarehouse.id,detail.productId,detail.quantity);
 
           await prisma.inventoryMovement.create({
             data: {
@@ -766,11 +832,21 @@ export class SalesService {
               type: $Enums.InventoryMovementType.SALE_OUT,
               quantity: detail.quantity,
               previousStock: centralStock.stock,
-              newStock: updatedCentralStock.stock,
+              newStock: confirmedStock,
               referenceId: sale.id,
               observations: `Venta ${sale.saleNumber} confirmada`,
             },
           });
+        }
+
+
+        for (const bonus of sale.bonusDetails ?? []) {
+          const row = await prisma.warehouseStock.findUnique({ where: {warehouseId_productId:{warehouseId:centralWarehouse.id,productId:bonus.productId}} });
+          if (!row || row.stock < bonus.quantity || row.reservedStock < bonus.quantity) throw new BadRequestException('Stock o reserva de bonificación insuficiente');
+          const newStock = await this.consumeCentralStock(prisma,centralWarehouse.id,bonus.productId,bonus.quantity);
+          await prisma.inventoryMovement.create({data:{warehouseId:centralWarehouse.id,productId:bonus.productId,userId,
+            type:$Enums.InventoryMovementType.BONUS_OUT,quantity:bonus.quantity,previousStock:row.stock,newStock,referenceId:id,
+            observations:`Bonificación de venta ${sale.saleNumber}`}});
         }
 
         await prisma.sale.update({
@@ -828,6 +904,7 @@ export class SalesService {
         },
         include: {
           details: true,
+          bonusDetails: true,
         },
       });
 
@@ -891,8 +968,13 @@ export class SalesService {
           }))
         : undefined);
 
+    const originalGiftAllocations = (current.bonusDetails ?? []).map(g=>({productId:g.productId,quantity:g.quantity}));
+    const preparedBonuses = (detailsToUpdate || updateSaleDto.bonuses !== undefined) ? await this.prepareBonuses(detailsToUpdate || current.details.map(d=>({productId:d.productId,quantity:d.quantity})), updateSaleDto.bonuses ?? originalGiftAllocations, id) : undefined;
+
     await this.prisma.$transaction(
       async (prisma) => {
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint) IS NULL AS locked`;
+
         if (detailsToUpdate) {
           const {
             centralWarehouse,
@@ -936,6 +1018,13 @@ export class SalesService {
             });
           }
 
+          if (preparedBonuses) {
+            for (const gift of current.bonusDetails ?? []) {
+              await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{decrement:gift.quantity}}});
+              await prisma.product.update({where:{id:gift.productId},data:{reservedStock:{decrement:gift.quantity}}});
+            }
+            await prisma.saleBonusDetail.deleteMany({where:{saleId:id}});
+          }
           await prisma.saleDetail.deleteMany({
             where: {
               saleId: id,
@@ -943,34 +1032,7 @@ export class SalesService {
           });
 
           for (const newDetail of preparedDetails) {
-            await prisma.warehouseStock.update({
-              where: {
-                warehouseId_productId: {
-                  warehouseId:
-                    centralWarehouse.id,
-                  productId:
-                    newDetail.productId,
-                },
-              },
-              data: {
-                reservedStock: {
-                  increment:
-                    newDetail.quantity,
-                },
-              },
-            });
-
-            await prisma.product.update({
-              where: {
-                id: newDetail.productId,
-              },
-              data: {
-                reservedStock: {
-                  increment:
-                    newDetail.quantity,
-                },
-              },
-            });
+            await this.reserveCentralStock(prisma,centralWarehouse.id,newDetail.productId,newDetail.quantity);
           }
 
           await prisma.saleDetail.createMany({
@@ -994,6 +1056,21 @@ export class SalesService {
           );
         }
 
+        if (preparedBonuses) {
+          if (!detailsToUpdate) {
+            const centralWarehouse=await this.getCentralWarehouse(prisma);
+            for (const gift of current.bonusDetails ?? []) {
+              await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{decrement:gift.quantity}}});
+              await prisma.product.update({where:{id:gift.productId},data:{reservedStock:{decrement:gift.quantity}}});
+            }
+            await prisma.saleBonusDetail.deleteMany({where:{saleId:id}});
+          }
+          const centralWarehouse=await this.getCentralWarehouse(prisma);
+          for (const gift of preparedBonuses) {
+            await this.reserveCentralStock(prisma,centralWarehouse.id,gift.productId,gift.quantity);
+          }
+          await prisma.saleBonusDetail.createMany({data:preparedBonuses.map(g=>({...g,saleId:id}))});
+        }
         const total = this.roundMoney(
           newSubtotal - finalDiscount,
         );
@@ -1063,6 +1140,7 @@ export class SalesService {
               product: true,
             },
           },
+          bonusDetails: true,
         },
       });
 
@@ -1085,6 +1163,8 @@ export class SalesService {
 
     await this.prisma.$transaction(
       async (prisma) => {
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint) IS NULL AS locked`;
+
         const centralWarehouse =
           await this.getCentralWarehouse(prisma);
 
@@ -1208,6 +1288,25 @@ export class SalesService {
           }
         }
 
+        for (const gift of sale.bonusDetails ?? []) {
+          const returnedRemaining=gift.quantity-gift.returnedQuantity;
+          if (sale.status===$Enums.SaleStatus.PENDING) {
+            await prisma.warehouseStock.update({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},data:{reservedStock:{decrement:gift.quantity}}});
+            await prisma.product.update({where:{id:gift.productId},data:{reservedStock:{decrement:gift.quantity}}});
+          } else if (sale.status===$Enums.SaleStatus.CONFIRMED && returnedRemaining>0) {
+            const old=await prisma.warehouseStock.findUnique({where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}}});
+            const updated=await prisma.warehouseStock.upsert({
+              where:{warehouseId_productId:{warehouseId:centralWarehouse.id,productId:gift.productId}},
+              create:{warehouseId:centralWarehouse.id,productId:gift.productId,stock:returnedRemaining},
+              update:{stock:{increment:returnedRemaining}}
+            });
+            await prisma.product.update({where:{id:gift.productId},data:{stock:{increment:returnedRemaining}}});
+            await prisma.inventoryMovement.create({data:{warehouseId:centralWarehouse.id,productId:gift.productId,userId,
+              type:$Enums.InventoryMovementType.BONUS_CANCEL_IN,quantity:returnedRemaining,previousStock:old?.stock||0,newStock:updated.stock,
+              referenceId:id,observations:`Anulación de bonificación ${sale.saleNumber}`}});
+          }
+        }
+
         await prisma.sale.update({
           where: {
             id,
@@ -1250,6 +1349,46 @@ export class SalesService {
     }
 
     return this.findOne(id);
+  }
+
+
+  async returnBonusUnits(saleId: string, userId: number, allocations: Array<{bonusDetailId:string;quantity:number}>, reason: string) {
+    if (!allocations?.length) throw new BadRequestException('Selecciona las bonificaciones devueltas');
+    if (new Set(allocations.map(a=>a.bonusDetailId)).size!==allocations.length ||
+      allocations.some(a=>!a.bonusDetailId || !Number.isSafeInteger(a.quantity) || a.quantity<=0)) {
+      throw new BadRequestException('Cantidades o registros duplicados en devolución de regalos');
+    }
+    return this.prisma.$transaction(async prisma=>{
+      // Serialize return and cancellation operations on this sale.
+      await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${saleId})::bigint) IS NULL AS locked`;
+      const sale=await prisma.sale.findUnique({where:{id:saleId},include:{bonusDetails:true}});
+      if(!sale || sale.status!==$Enums.SaleStatus.CONFIRMED)
+        throw new BadRequestException('Solo es posible devolver regalos de ventas confirmadas');
+      const central=await this.getCentralWarehouse(prisma);
+      for(const item of allocations){
+        const gift=sale.bonusDetails.find(d=>d.id===item.bonusDetailId);
+        if(!gift || item.quantity>gift.quantity-gift.returnedQuantity)
+          throw new BadRequestException('Cantidad bonificada no disponible para devolución');
+        const changed=await prisma.saleBonusDetail.updateMany({where:{
+          id:gift.id,returnedQuantity:{lte:gift.quantity-item.quantity}
+        },data:{returnedQuantity:{increment:item.quantity}}});
+        if(changed.count!==1) throw new BadRequestException('La devolución de regalos ya fue registrada');
+        const before=await prisma.warehouseStock.findUnique({where:{warehouseId_productId:{warehouseId:central.id,productId:gift.productId}}});
+        const after=await prisma.warehouseStock.upsert({
+          where:{warehouseId_productId:{warehouseId:central.id,productId:gift.productId}},
+          create:{warehouseId:central.id,productId:gift.productId,stock:item.quantity},
+          update:{stock:{increment:item.quantity}}
+        });
+        await prisma.product.update({where:{id:gift.productId},data:{stock:{increment:item.quantity}}});
+        await prisma.inventoryMovement.create({data:{
+          warehouseId:central.id,productId:gift.productId,userId,
+          type:$Enums.InventoryMovementType.BONUS_RETURN_IN,quantity:item.quantity,
+          previousStock:before?.stock||0,newStock:after.stock,referenceId:saleId,
+          observations:`Devolución autorizada de regalo de venta ${sale.saleNumber}: ${reason}`
+        }});
+      }
+      return {saleId,returned:allocations};
+    });
   }
 
   async createReturn(
@@ -1314,6 +1453,32 @@ export class SalesService {
       );
     }
 
+    // Prevent an outstanding gifted entitlement from becoming invalid after a partial return.
+    // Returning complimentary units requires a separate, audited workflow.
+    const gifts=await this.prisma.saleBonusDetail.findMany({where:{saleId}});
+    if(gifts.length) {
+      const original = await this.prisma.saleDetail.findMany({where:{saleId},include:{product:{select:{subCategoryId:true}}}});
+      const returnedByDetail=new Map<string,number>();
+      for(const row of dto.details) returnedByDetail.set(row.saleDetailId,(returnedByDetail.get(row.saleDetailId)||0)+row.quantity);
+      const eligible=new Map<string,number>();
+      for(const row of original){
+        const category=row.product.subCategoryId;
+        if(!category)continue;
+        const remaining=row.quantity-row.returnedQuantity-(returnedByDetail.get(row.id)||0);
+        eligible.set(category,(eligible.get(category)||0)+remaining);
+      }
+      const byCat=new Map<string,{minimum:number;reward:number;gifts:number}>();
+      for(const gift of gifts){
+        const row=byCat.get(gift.subCategoryId)||{minimum:gift.minimumQuantity,reward:gift.bonusQuantity,gifts:0};
+        row.gifts+=gift.quantity-gift.returnedQuantity;
+        byCat.set(gift.subCategoryId,row);
+      }
+      for(const [cat,rule] of byCat){
+        const allowed=Math.floor(Math.max(0,eligible.get(cat)||0)/rule.minimum)*rule.reward;
+        if(rule.gifts>allowed) throw new BadRequestException('La devolución reduce el derecho a bonificaciones. Regulariza primero las unidades gratuitas con autorización administrativa.');
+      }
+    }
+
     const detailMap = new Map(
       sale.details.map((detail) => [
         detail.id,
@@ -1367,6 +1532,8 @@ export class SalesService {
     const result =
       await this.prisma.$transaction(
         async (prisma) => {
+        await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${saleId})::bigint) IS NULL AS locked`;
+
           const centralWarehouse =
             await this.getCentralWarehouse(prisma);
           const saleReturn =

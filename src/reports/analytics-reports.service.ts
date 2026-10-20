@@ -757,6 +757,7 @@ export class AnalyticsReportsService {
       where,
       include: {
         client: true,
+        bonusDetails: { include: { product: { include: { provider: true, category: true } } } },
         details: {
           include: {
             product: {
@@ -774,7 +775,10 @@ export class AnalyticsReportsService {
     const products = Array.from(
       new Map(
         sales.flatMap((sale) =>
-          sale.details.map((detail) => [detail.productId, detail.product]),
+          [
+            ...sale.details.map((detail) => [detail.productId, detail.product] as const),
+            ...sale.bonusDetails.map((gift) => [gift.productId, gift.product] as const),
+          ],
         ),
       ).values(),
     ).sort(
@@ -788,6 +792,7 @@ export class AnalyticsReportsService {
       {
         name: string;
         quantities: Map<string, number>;
+        bonusQuantities: Map<string, number>;
         total: number;
       }
     >();
@@ -796,6 +801,7 @@ export class AnalyticsReportsService {
       const client = clients.get(sale.clientId) || {
         name: sale.client.fullName,
         quantities: new Map<string, number>(),
+        bonusQuantities: new Map<string, number>(),
         total: 0,
       };
       client.total += sale.total;
@@ -806,6 +812,10 @@ export class AnalyticsReportsService {
           detail.productId,
           (client.quantities.get(detail.productId) || 0) + quantity,
         );
+      }
+      for (const gift of sale.bonusDetails) {
+        const quantity = Math.max(gift.quantity - gift.returnedQuantity, 0);
+        client.bonusQuantities.set(gift.productId, (client.bonusQuantities.get(gift.productId) || 0) + quantity);
       }
       clients.set(sale.clientId, client);
     }
@@ -947,6 +957,7 @@ export class AnalyticsReportsService {
                   <th>Producto</th>
                   <th>Clientes</th>
                   <th>Cantidad total vendida</th>
+                  <th>Bonificación entregada</th>
                 </tr>
               </thead>
               <tbody>
@@ -958,6 +969,7 @@ export class AnalyticsReportsService {
                     const clientCount = quantities.filter(
                       (quantity) => quantity > 0,
                     ).length;
+                    const totalBonus = matrix.clients.reduce((n, client) => n + (client.bonusQuantities.get(product.id) || 0), 0);
                     const totalQuantity = quantities.reduce(
                       (total, quantity) => total + quantity,
                       0,
@@ -976,6 +988,7 @@ export class AnalyticsReportsService {
                             'number',
                           ),
                         )}</td>
+                        <td class="quantity">${this.escapeHtml(this.formatValue(totalBonus, "number"))}</td>
                       </tr>`;
                   })
                   .join('')}
@@ -1833,6 +1846,7 @@ export class AnalyticsReportsService {
       },
       include: {
         details: { include: { product: true } },
+        bonusDetails: { include: { product: true } },
       },
     });
     const productMap = new Map<
@@ -1840,6 +1854,7 @@ export class AnalyticsReportsService {
       {
         name: string;
         quantity: number;
+        giftQuantity: number;
         revenue: number;
         cost: number;
       }
@@ -1850,6 +1865,7 @@ export class AnalyticsReportsService {
         const current = productMap.get(detail.productId) || {
           name: detail.product.name,
           quantity: 0,
+          giftQuantity: 0,
           revenue: 0,
           cost: 0,
         };
@@ -1858,11 +1874,19 @@ export class AnalyticsReportsService {
         current.cost += quantity * detail.product.purchasePrice;
         productMap.set(detail.productId, current);
       }
+      for (const gift of sale.bonusDetails) {
+        const giftQuantity=Math.max(gift.quantity-gift.returnedQuantity,0);
+        const current=productMap.get(gift.productId)||{name:gift.product.name,quantity:0,giftQuantity:0,revenue:0,cost:0};
+        current.giftQuantity+=giftQuantity;
+        current.cost+=giftQuantity*gift.unitCostSnapshot;
+        productMap.set(gift.productId,current);
+      }
     }
     const rows = Array.from(productMap.values())
       .map((product) => ({
         product: product.name,
         quantity: this.roundQuantity(product.quantity),
+        giftQuantity: this.roundQuantity(product.giftQuantity),
         revenue: this.roundMoney(product.revenue),
         cost: this.roundMoney(product.cost),
         profit: this.roundMoney(product.revenue - product.cost),
@@ -1887,7 +1911,7 @@ export class AnalyticsReportsService {
           format: 'currency',
         },
         {
-          label: 'Costo estimado',
+          label: 'Costo estimado (incluye regalos)',
           value: this.roundMoney(cost),
           format: 'currency',
         },
@@ -1906,6 +1930,7 @@ export class AnalyticsReportsService {
           format: 'number',
           align: 'right',
         },
+        { key: 'giftQuantity', label: 'Bonificado', format: 'number', align: 'right' },
         {
           key: 'revenue',
           label: 'Ingresos',
@@ -2286,6 +2311,9 @@ export class AnalyticsReportsService {
       PURCHASE_IN: 'Entrada por compra',
       PURCHASE_CANCEL_OUT: 'Salida por anulación de compra',
       SALE_OUT: 'Salida por venta',
+      BONUS_OUT: 'Salida por bonificación',
+      BONUS_CANCEL_IN: 'Entrada por anulación de bonificación',
+      BONUS_RETURN_IN: 'Entrada por devolución de bonificación',
       SALE_RETURN_IN: 'Entrada por devolución/anulación',
       TRANSFER_IN: 'Entrada por transferencia',
       TRANSFER_OUT: 'Salida por transferencia',
