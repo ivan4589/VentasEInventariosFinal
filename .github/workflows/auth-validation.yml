@@ -44,6 +44,7 @@ jobs:
         run: |
           npm test -- --runInBand \
             src/auth/authorization/permissions.spec.ts \
+            src/data-protection/bonus-table-security.spec.ts \
             src/config/environment.spec.ts \
             src/health/health.controller.spec.ts \
             src/auth/security-crypto.spec.ts \
@@ -66,3 +67,5 @@ jobs:
             exit 1
           fi
       - run: npm audit --omit=dev --audit-level=moderate
+      - name: Verify backup TLS compatibility
+        run: node --test scripts/backup-ssl-mode.test.mjs
