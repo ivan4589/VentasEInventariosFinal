@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { chmod, mkdir, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { backupSslMode } from './backup-ssl-mode.mjs';
 
 function run(command, args, env) {
   return new Promise((resolveRun, reject) => {
@@ -38,7 +39,7 @@ const pgEnvironment = {
   PGPASSWORD: decodeURIComponent(database.password),
   PGDATABASE: database.pathname.replace(/^\//, ''),
   ...(database.searchParams.get('sslmode')
-    ? { PGSSLMODE: database.searchParams.get('sslmode') }
+    ? { PGSSLMODE: backupSslMode(database.searchParams.get('sslmode')) }
     : {}),
 };
 
