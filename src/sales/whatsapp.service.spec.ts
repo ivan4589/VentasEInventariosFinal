@@ -19,7 +19,9 @@ describe('WhatsAppService', () => {
     sale: {
       findUnique: jest.fn(),
     },
+    clientContact: { findFirst: jest.fn() },
     saleWhatsAppLog: {
+      findFirst: jest.fn(),
       create: jest.fn(),
     },
   };
@@ -60,6 +62,26 @@ describe('WhatsAppService', () => {
     await expect(service.sendSaleDocument('sale-1', 1)).rejects.toThrow(
       'Solo se puede enviar una venta confirmada',
     );
+  });
+
+  it('rechaza contactos de otro cliente o inactivos', async () => {
+    prisma.sale.findUnique.mockResolvedValue({ id: 'sale-1', clientId: 'client-1', status: 'CONFIRMED', client: {}, whatsappLogs: [], pdfUrl: 'pdf' });
+    prisma.clientContact.findFirst.mockResolvedValue(null);
+    await expect(service.sendSaleDocument('sale-1', 1, false, 'contact-1')).rejects.toThrow('Contacto activo no encontrado');
+    expect(prisma.clientContact.findFirst).toHaveBeenCalledWith({ where: { id: 'contact-1', clientId: 'client-1', isActive: true } });
+  });
+
+  it('rechaza un contacto sin consentimiento', async () => {
+    prisma.sale.findUnique.mockResolvedValue({ id: 'sale-1', clientId: 'client-1', status: 'CONFIRMED', client: {}, whatsappLogs: [], pdfUrl: 'pdf' });
+    prisma.clientContact.findFirst.mockResolvedValue({ phone: '71234567', whatsappConsent: false });
+    await expect(service.sendSaleDocument('sale-1', 1, false, 'contact-1')).rejects.toThrow('no autorizó');
+  });
+
+  it('evita reenviar al mismo número sin autorización explícita', async () => {
+    prisma.sale.findUnique.mockResolvedValue({ id: 'sale-1', status: 'CONFIRMED', client: { phone: '71234567', whatsappConsent: true }, whatsappLogs: [], pdfUrl: 'pdf' });
+    prisma.saleWhatsAppLog.findFirst.mockResolvedValueOnce({ id: 'previous' });
+    await expect(service.sendSaleDocument('sale-1', 1)).rejects.toThrow('ya fue enviada');
+    expect(prisma.saleWhatsAppLog.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ saleId: 'sale-1', phoneNumber: '59171234567' }) }));
   });
 
   it('sube el PDF y envía la plantilla aprobada', async () => {

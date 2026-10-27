@@ -49,6 +49,10 @@ export class WhatsAppService {
     private readonly storage: ObjectStorageService,
   ) {}
 
+  listLogs(saleId: string) {
+    return this.prisma.saleWhatsAppLog.findMany({ where: { saleId }, orderBy: { createdAt: 'desc' }, select: { id: true, phoneNumber: true, status: true, createdAt: true, userId: true, errorMessage: true, metaMessageId: true } });
+  }
+
   normalizePhone(phone: string): string {
     const digits = phone.replace(/\D/g, '');
 
@@ -247,19 +251,20 @@ export class WhatsAppService {
     saleId: string,
     userId: number,
     resend = false,
+    contactId?: string,
   ): Promise<SendSaleWhatsAppResult> {
     if (this.activeSends.has(saleId)) {
       throw new ConflictException('El envío de esta nota ya está en curso');
     }
     this.activeSends.add(saleId);
     try {
-      return await this.sendSaleDocumentOnce(saleId, userId, resend);
+      return await this.sendSaleDocumentOnce(saleId, userId, resend, contactId);
     } finally {
       this.activeSends.delete(saleId);
     }
   }
 
-  private async sendSaleDocumentOnce(saleId: string, userId: number, resend: boolean): Promise<SendSaleWhatsAppResult> {
+  private async sendSaleDocumentOnce(saleId: string, userId: number, resend: boolean, contactId?: string): Promise<SendSaleWhatsAppResult> {
     const sale = await this.prisma.sale.findUnique({
       where: {
         id: saleId,
@@ -294,15 +299,15 @@ export class WhatsAppService {
       );
     }
 
-    if (!sale.client.whatsappConsent) {
-      throw new BadRequestException(
-        'El cliente no autorizó recibir documentos por WhatsApp',
-      );
+    const contact = contactId ? await this.prisma.clientContact.findFirst({
+      where: { id: contactId, clientId: sale.clientId, isActive: true },
+    }) : null;
+    if (contactId && !contact) throw new NotFoundException('Contacto activo no encontrado para este cliente');
+    if (!(contact ? contact.whatsappConsent : sale.client.whatsappConsent)) {
+      throw new BadRequestException('El destinatario no autorizó recibir documentos por WhatsApp');
     }
-
-    if (!sale.client.phone) {
-      throw new BadRequestException('El cliente no tiene teléfono registrado');
-    }
+    const phone = contact ? contact.phone : sale.client.phone;
+    if (!phone) throw new BadRequestException('El destinatario no tiene teléfono registrado');
 
     if (!sale.pdfUrl) {
       throw new BadRequestException(
@@ -310,13 +315,15 @@ export class WhatsAppService {
       );
     }
 
-    if (sale.whatsappLogs.length && !resend) {
+    const phoneNumber = this.normalizePhone(phone);
+    const previous = await this.prisma.saleWhatsAppLog.findFirst({
+      where: { saleId, phoneNumber, status: { in: [WhatsAppSendStatus.SENT, WhatsAppSendStatus.DELIVERED, WhatsAppSendStatus.READ] } },
+    });
+    if (previous && !resend) {
       throw new ConflictException(
         'La nota de venta ya fue enviada. Confirma el reenvío para volver a enviarla.',
       );
     }
-
-    const phoneNumber = this.normalizePhone(sale.client.phone);
 
     try {
       const configuration = this.getConfiguration();
@@ -334,7 +341,7 @@ export class WhatsAppService {
         phoneNumber,
         mediaId,
         filename,
-        sale.client.fullName,
+        contact?.name || sale.client.fullName,
         sale.saleNumber,
         sale.total,
         configuration,
