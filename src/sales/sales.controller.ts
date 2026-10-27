@@ -24,6 +24,7 @@ import { CancelEconomicOperationDto } from '../economic-integrity/dto/cancel-eco
 import { EconomicIntegrityService } from '../economic-integrity/economic-integrity.service';
 import { CreateSaleReturnDto } from './dto/create-sale-return.dto';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { SendSaleWhatsAppBatchDto } from './dto/send-sale-whatsapp-batch.dto';
 import { SendSaleWhatsAppDto } from './dto/send-sale-whatsapp.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { ReturnBonusDto } from './dto/return-bonus.dto';
@@ -180,6 +181,31 @@ export class SalesController {
       req.user.id,
       dto.resend ?? false,
     );
+  }
+
+  @Post(':id/whatsapp/recipients')
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Permissions(PERMISSIONS.SALES_WHATSAPP_ALL)
+  async sendWhatsAppRecipients(@Param('id') id: string, @Body() dto: SendSaleWhatsAppBatchDto, @Request() req: any) {
+    await this.dataScope.assertCanManagePresale(id, req.user);
+    const results: Array<Record<string, unknown>> = [];
+    for (const recipient of dto.recipients) {
+      try {
+        const result = await this.whatsappService.sendSaleDocument(id, req.user.id, dto.resend ?? false, recipient === 'principal' ? undefined : recipient);
+        results.push({ recipient, ...result });
+      } catch (error) {
+        results.push({ recipient, status: 'FAILED', error: error instanceof Error ? error.message : 'Error al enviar' });
+      }
+    }
+    return { saleId: id, results };
+  }
+
+  @Get(':id/whatsapp/logs')
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR)
+  @Permissions(PERMISSIONS.SALES_WHATSAPP_ALL)
+  async whatsappLogs(@Param('id') id: string, @Request() req: any) {
+    await this.dataScope.assertCanManagePresale(id, req.user);
+    return this.whatsappService.listLogs(id);
   }
 
   @Post(':id/bonus-returns')

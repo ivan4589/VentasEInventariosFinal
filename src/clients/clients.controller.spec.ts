@@ -5,6 +5,7 @@ import { PERMISSIONS_KEY } from '../auth/decorators/permissions.decorator';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 import { ClientSpreadsheetService } from '../spreadsheets/client-spreadsheet.service';
 import { ClientsController } from './clients.controller';
+import { ClientContactsService } from './client-contacts.service';
 import { ClientsService } from './clients.service';
 
 describe('ClientsController', () => {
@@ -15,6 +16,7 @@ describe('ClientsController', () => {
       controllers: [ClientsController],
       providers: [
         { provide: ClientsService, useValue: {} },
+        { provide: ClientContactsService, useValue: {} },
         { provide: ClientSpreadsheetService, useValue: {} },
       ],
     }).compile();

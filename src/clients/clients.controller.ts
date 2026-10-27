@@ -22,6 +22,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CancelEconomicOperationDto } from '../economic-integrity/dto/cancel-economic-operation.dto';
+import { ClientContactsService } from './client-contacts.service';
+import { CreateClientContactDto, UpdateClientContactDto } from './dto/client-contact.dto';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -40,6 +42,7 @@ interface AuthenticatedRequest {
 export class ClientsController {
   constructor(
     private readonly clientsService: ClientsService,
+    private readonly contacts: ClientContactsService,
     private readonly spreadsheets: ClientSpreadsheetService,
   ) {}
 
@@ -104,6 +107,25 @@ export class ClientsController {
       requireXlsxFile(file).buffer,
       request.user.id,
     );
+  }
+
+  @Get(':id/contacts')
+  @Roles($Enums.Role.ADMIN, $Enums.Role.VENDEDOR, $Enums.Role.COBRADOR)
+  @Permissions(PERMISSIONS.CLIENTS_VIEW)
+  listContacts(@Param('id') id: string) { return this.contacts.list(id); }
+
+  @Post(':id/contacts')
+  @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.CLIENTS_UPDATE)
+  createContact(@Param('id') id: string, @Body() dto: CreateClientContactDto, @Request() req: AuthenticatedRequest) {
+    return this.contacts.create(id, dto, req.user.id);
+  }
+
+  @Patch(':id/contacts/:contactId')
+  @Roles($Enums.Role.ADMIN)
+  @Permissions(PERMISSIONS.CLIENTS_UPDATE)
+  updateContact(@Param('id') id: string, @Param('contactId') contactId: string, @Body() dto: UpdateClientContactDto, @Request() req: AuthenticatedRequest) {
+    return this.contacts.update(id, contactId, dto, req.user.id);
   }
 
   @Get(':id')

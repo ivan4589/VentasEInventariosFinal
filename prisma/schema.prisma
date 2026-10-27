@@ -249,7 +249,27 @@ model Location {
   clients   Client[]
 }
 
+model ClientContact {
+  id String @id @default(cuid())
+  clientId String
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name String
+  relationship String?
+  phone String
+  phoneNormalized String
+  whatsappConsent Boolean @default(false)
+  isDefault Boolean @default(false)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clientId, phoneNormalized])
+  @@index([clientId, isActive])
+  @@map("client_contacts")
+}
+
 model Client {
+  contacts ClientContact[]
   id              String     @id @default(cuid())
   fullName        String
   alias           String?
