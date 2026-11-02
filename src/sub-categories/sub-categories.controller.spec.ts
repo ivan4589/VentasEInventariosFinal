@@ -7,7 +7,7 @@ describe('SubCategoriesController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SubCategoriesController],
-    }).compile();
+    }).useMocker(() => ({})).compile();
 
     controller = module.get<SubCategoriesController>(SubCategoriesController);
   });

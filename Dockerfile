@@ -6,7 +6,9 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openssl \
     && rm -rf /var/lib/apt/lists/*
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
+COPY vendor ./vendor
+COPY scripts/patch-excel-glob.cjs ./scripts/patch-excel-glob.cjs
 RUN npm ci
 
 FROM dependencies AS build
@@ -35,6 +37,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/vendor ./vendor
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json prisma.config.ts ./
 COPY --chown=node:node prisma ./prisma

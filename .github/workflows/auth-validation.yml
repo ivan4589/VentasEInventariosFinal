@@ -45,6 +45,7 @@ jobs:
           npm test -- --runInBand \
             src/auth/authorization/permissions.spec.ts \
             src/data-protection/bonus-table-security.spec.ts \
+            src/data-protection/client-contact-security.spec.ts \
             src/config/environment.spec.ts \
             src/health/health.controller.spec.ts \
             src/auth/security-crypto.spec.ts \
@@ -57,6 +58,12 @@ jobs:
             src/warehouse-transfers/warehouse-transfers.service.spec.ts \
             src/sales/sales.service.spec.ts \
             src/sales/whatsapp.service.spec.ts \
+            src/sales/whatsapp-grouped-note.spec.ts \
+            src/clients/client-contacts.service.spec.ts \
+            src/clients/clients.controller.spec.ts \
+            src/spreadsheets/client-spreadsheet.service.spec.ts \
+            src/spreadsheets/product-spreadsheet.service.spec.ts \
+            src/spreadsheets/excel-dependency-compatibility.spec.ts \
             src/purchases/purchases.service.spec.ts \
             src/collections/collections.service.spec.ts \
             src/inventory/inventory.service.spec.ts
@@ -69,3 +76,13 @@ jobs:
       - run: npm audit --omit=dev --audit-level=moderate
       - name: Verify backup TLS compatibility
         run: node --test scripts/backup-ssl-mode.test.mjs
+
+  docker-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build production image with local compatibility package
+        run: docker build --tag ventas-backend:ci .
+      - name: Verify Excel and migrations in production image
+        run: docker run --rm --entrypoint node ventas-backend:ci scripts/verify-excel-runtime.cjs

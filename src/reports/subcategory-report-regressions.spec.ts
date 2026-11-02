@@ -9,6 +9,7 @@ const products = ['a', 'b'].map(id => ({
   provider: { companyName: 'Proveedor' }, category: { name: 'Fideos' }, subCategory: { id: 's', name: 'Fideo arroba' },
 }));
 const sale = { id: 'sale', saleNumber: 'TEST', clientId: 'client', client: { fullName: 'Cliente de prueba' },
+  bonusDetails: [],
   user: { name: 'Usuario de prueba' }, total: 50, status: 'CONFIRMED', date: new Date(), confirmedAt: new Date(),
   details: products.map((product, index) => ({ productId: product.id, product, quantity: index + 2, returnedQuantity: 0, unitPrice: 10, subtotal: (index + 2) * 10 })),
 };

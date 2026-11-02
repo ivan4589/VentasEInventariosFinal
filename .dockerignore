@@ -10,5 +10,6 @@ backups
 uploads
 *.log
 *.sql
+!prisma/migrations/**/migration.sql
 Dockerfile*
 README.md
