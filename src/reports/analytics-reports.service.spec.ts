@@ -147,16 +147,19 @@ describe('AnalyticsReportsService', () => {
       clients: [
         {
           name: 'Ana',
+          bonusQuantities: new Map<string, number>(),
           quantities: new Map([[product.id, 2]]),
           total: 20,
         },
         {
           name: 'Mario',
+          bonusQuantities: new Map<string, number>(),
           quantities: new Map<string, number>(),
           total: 10,
         },
         {
           name: 'Rosa',
+          bonusQuantities: new Map<string, number>(),
           quantities: new Map([[product.id, 56]]),
           total: 560,
         },

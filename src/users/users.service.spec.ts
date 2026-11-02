@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminStepUpService } from '../auth/admin-step-up.service';
 import { UsersService } from './users.service';
 
 describe('UsersService', () => {
@@ -11,6 +12,8 @@ describe('UsersService', () => {
     password: 'hashed-password',
     role: $Enums.Role.VENDEDOR,
     isActive: true,
+    status: $Enums.UserStatus.ACTIVE,
+    deletedAt: null,
     lastLoginAt: null,
     createdAt: new Date('2026-07-24T10:00:00.000Z'),
     updatedAt: new Date('2026-07-24T10:00:00.000Z'),
@@ -29,7 +32,12 @@ describe('UsersService', () => {
       findMany: jest.fn(),
     },
     $transaction: jest.fn(),
+    authSession: { updateMany: jest.fn() },
+    securityToken: { updateMany: jest.fn() },
   };
+
+  const confirmation = { password: 'test-password', code: '123456', reason: 'Test administration' };
+  const stepUp = { verify: jest.fn().mockResolvedValue({ reason: confirmation.reason }) };
 
   let service: UsersService;
 
@@ -39,7 +47,7 @@ describe('UsersService', () => {
       async (callback: (transaction: typeof prisma) => unknown) =>
         callback(prisma),
     );
-    service = new UsersService(prisma as unknown as PrismaService);
+    service = new UsersService(prisma as unknown as PrismaService, stepUp as unknown as AdminStepUpService);
   });
 
   it('crea un usuario normalizando correo y registra auditoría', async () => {
@@ -51,7 +59,7 @@ describe('UsersService', () => {
       {
         name: '  Usuario Prueba  ',
         email: '  USUARIO@PRUEBA.COM ',
-        password: 'Segura123',
+        confirmation,
         role: $Enums.Role.VENDEDOR,
       },
       1,
@@ -73,7 +81,9 @@ describe('UsersService', () => {
         action: $Enums.UserAdministrationAction.USER_CREATED,
       }),
     });
-    expect(result.email).toBe('usuario@prueba.com');
+    expect(result.user.email).toBe('usuario@prueba.com');
+    expect(stepUp.verify).toHaveBeenCalledWith(1, confirmation);
+    expect(result.temporaryPassword).toHaveLength(18);
   });
 
   it('rechaza correos duplicados', async () => {
@@ -84,7 +94,8 @@ describe('UsersService', () => {
         {
           name: 'Duplicado',
           email: 'usuario@prueba.com',
-          password: 'Segura123',
+          role: $Enums.Role.VENDEDOR,
+          confirmation,
         },
         1,
       ),
@@ -99,7 +110,7 @@ describe('UsersService', () => {
     });
 
     await expect(
-      service.update(1, { role: $Enums.Role.VENDEDOR }, 1),
+      service.update(1, { role: $Enums.Role.VENDEDOR, confirmation }, 1),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -111,7 +122,7 @@ describe('UsersService', () => {
     });
 
     await expect(
-      service.updateStatus(1, { isActive: false }, 1),
+      service.updateStatus(1, { isActive: false, confirmation }, 1),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -124,7 +135,7 @@ describe('UsersService', () => {
     prisma.user.count.mockResolvedValue(0);
 
     await expect(
-      service.updateStatus(3, { isActive: false }, 1),
+      service.updateStatus(3, { isActive: false, confirmation }, 1),
     ).rejects.toThrow(
       'El sistema debe conservar al menos un administrador activo',
     );
@@ -140,14 +151,14 @@ describe('UsersService', () => {
 
     const result = await service.updateStatus(
       baseUser.id,
-      { isActive: false },
+      { isActive: false, confirmation },
       1,
     );
 
     expect(prisma.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: baseUser.id },
-        data: { isActive: false },
+        data: expect.objectContaining({ isActive: false, status: $Enums.UserStatus.DISABLED }),
       }),
     );
     expect(result.isActive).toBe(false);
@@ -163,20 +174,27 @@ describe('UsersService', () => {
     prisma.user.update.mockResolvedValue(baseUser);
     prisma.userAdministrationLog.create.mockResolvedValue({});
 
-    await service.resetPassword(baseUser.id, { password: 'NuevaSegura123' }, 1);
+    const result = await service.resetPassword(baseUser.id, { confirmation }, 1);
 
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: baseUser.id },
-      data: {
-        password: expect.not.stringMatching('NuevaSegura123'),
-      },
+      data: expect.objectContaining({
+        password: expect.any(String),
+        mustChangePassword: true,
+      }),
     });
     expect(prisma.userAdministrationLog.create).toHaveBeenCalledWith({
       data: {
         actorId: 1,
         targetUserId: baseUser.id,
         action: $Enums.UserAdministrationAction.PASSWORD_RESET,
+        details: expect.objectContaining({ temporaryPasswordIssued: true, sessionsRevoked: true }),
       },
     });
+    expect(result.temporaryPassword).toHaveLength(18);
+    expect(prisma.user.update.mock.calls[0][0].data.password).not.toBe(result.temporaryPassword);
+    expect(JSON.stringify(prisma.userAdministrationLog.create.mock.calls)).not.toContain(result.temporaryPassword);
+    expect(prisma.authSession.updateMany).toHaveBeenCalled();
+    expect(prisma.securityToken.updateMany).toHaveBeenCalled();
   });
 });

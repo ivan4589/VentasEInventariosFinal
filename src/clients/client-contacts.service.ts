@@ -48,7 +48,9 @@ export class ClientContactsService {
         if (name === '') throw new BadRequestException('El nombre es obligatorio');
         const phoneNormalized = dto.phone === undefined ? undefined : normalizeOptionalPhone(dto.phone)!;
         if (phoneNormalized && client.phoneNormalized === phoneNormalized) throw new ConflictException('El teléfono coincide con el contacto principal');
-        const contact = await tx.clientContact.update({ where: { id: contactId }, data: { name, relationship: dto.relationship === undefined ? undefined : normalizeOptionalText(dto.relationship), phone: dto.phone?.trim(), phoneNormalized, whatsappConsent: dto.whatsappConsent, isDefault: dto.isDefault, isActive: dto.isActive } });
+        const phoneChanged = phoneNormalized !== undefined && phoneNormalized !== current.phoneNormalized;
+        const whatsappConsent = phoneChanged ? dto.whatsappConsent === true : dto.whatsappConsent;
+        const contact = await tx.clientContact.update({ where: { id: contactId }, data: { name, relationship: dto.relationship === undefined ? undefined : normalizeOptionalText(dto.relationship), phone: dto.phone?.trim(), phoneNormalized, whatsappConsent, isDefault: dto.isDefault, isActive: dto.isActive } });
         await this.audit.record({ userId, action: 'CLIENT_CONTACT_UPDATED', entityType: 'CLIENT_CONTACT', entityId: contact.id, before: current, after: contact }, tx);
         return contact;
       });

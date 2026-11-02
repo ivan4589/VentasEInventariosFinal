@@ -1,0 +1,10 @@
+{
+  "name": "@yungas/legacy-glob-adapter",
+  "version": "1.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "index.cjs",
+  "files": ["index.cjs", "README.md"],
+  "engines": { "node": ">=22 <23" },
+  "dependencies": { "glob": "14.0.2" }
+}

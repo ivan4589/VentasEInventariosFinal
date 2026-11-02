@@ -13,7 +13,7 @@ describe('envío del mismo PDF sin cambiar plantilla ni venta', () => {
   let template: string;
   beforeEach(() => {
     template = 'nota_ventas_pdf';
-    prisma = { sale: { findUnique: jest.fn().mockResolvedValue(sale), update: jest.fn() }, saleWhatsAppLog: { create: jest.fn().mockResolvedValue({ createdAt: new Date() }) } };
+    prisma = { sale: { findUnique: jest.fn().mockResolvedValue(sale), update: jest.fn() }, saleWhatsAppLog: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({ createdAt: new Date() }) } };
     storage = { readPrivate: jest.fn().mockResolvedValue(Buffer.from('%PDF-test')) };
     const config = { get: (key: string) => ({ WHATSAPP_TEMPLATE_NAME: template, WHATSAPP_TEMPLATE_LANGUAGE: 'es', WHATSAPP_ACCESS_TOKEN: 'test-token', WHATSAPP_PHONE_NUMBER_ID: '12345', WHATSAPP_GRAPH_API_VERSION: 'v25.0', WHATSAPP_DEFAULT_COUNTRY_CODE: '591' })[key] };
     service = new WhatsAppService(prisma, config as any, storage);

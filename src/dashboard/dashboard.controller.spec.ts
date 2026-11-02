@@ -10,7 +10,7 @@ describe('DashboardController', () => {
       dashboardService as unknown as DashboardService,
     );
 
-    await expect(controller.getKPI({})).resolves.toEqual({
+    await expect(controller.getKPI({}, { user: { id: 1, role: 'ADMIN' } })).resolves.toEqual({
       salesToday: 100,
     });
     expect(dashboardService.getKPI).toHaveBeenCalledWith({});
