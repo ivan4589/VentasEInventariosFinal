@@ -1191,6 +1191,19 @@ export class SalesService {
       async (prisma) => {
         await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint) IS NULL AS locked`;
 
+        // Never free a pending mobile order while merchandise is still with a client.
+        if (sale.deliveryMode && sale.status === $Enums.SaleStatus.PENDING) {
+          const events = await prisma.saleDeliveryEvent.findMany({ where: { saleId: id } });
+          const delivered = new Map<string, number>();
+          for (const event of events) {
+            delivered.set(event.productId, (delivered.get(event.productId) ?? 0) +
+              (event.kind === 'DELIVER' ? event.quantity : -event.quantity));
+          }
+          if ([...delivered.values()].some(quantity => quantity > 0)) {
+            throw new BadRequestException('Registre la devolucion de los productos entregados antes de anular');
+          }
+        }
+
         const centralWarehouse =
           await this.getCentralWarehouse(prisma);
 
