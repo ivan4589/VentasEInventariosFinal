@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { RealtimeAccessController } from './realtime-access.controller';
 import { AuthModule } from '../auth/auth.module';
 import { ReportsModule } from '../reports/reports.module';
 import { BonusReportService } from './bonuses/bonus-report.service';
@@ -12,8 +14,8 @@ import { SalesService } from './sales.service';
 import { WhatsAppService } from './whatsapp.service';
 
 @Module({
-  imports: [ReportsModule, AuthModule],
-  controllers: [SalesController, DeliveryController, BonusRulesController, BonusReportController],
+  imports: [ReportsModule, AuthModule, JwtModule.register({})],
+  controllers: [SalesController, DeliveryController, RealtimeAccessController, BonusRulesController, BonusReportController],
   providers: [SalesService, DeliveryService, WhatsAppService, BonusRulesService, BonusReportService],
 })
 export class SalesModule {}
