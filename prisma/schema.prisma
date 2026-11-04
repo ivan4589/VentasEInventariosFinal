@@ -115,6 +115,7 @@ model User {
   administrationActions        UserAdministrationLog[] @relation("UserAdministrationActor")
   administrationEvents         UserAdministrationLog[] @relation("UserAdministrationTarget")
   saleWhatsAppLogs             SaleWhatsAppLog[]
+  deliveryEvents               SaleDeliveryEvent[]
   economicAuditLogs            EconomicAuditLog[]
   dataAuditLogs                DataAuditLog[]
 
@@ -383,6 +384,7 @@ model Product {
   bonusDetails         SaleBonusDetail[]
   saleReturnDetails    SaleReturnDetail[]
   warehouseStocks      WarehouseStock[]
+  deliveryEvents       SaleDeliveryEvent[]
   transferDetails      WarehouseTransferDetail[]
   inventoryMovements   InventoryMovement[]
   createdAt            DateTime                  @default(now())
@@ -488,6 +490,8 @@ model Sale {
   user                 User                  @relation(fields: [userId], references: [id])
   date                 DateTime              @default(now())
   status               SaleStatus            @default(PENDING)
+  deliveryMode         Boolean               @default(false)
+  deliveryRevision     Int                   @default(0)
   paymentStatus        PaymentStatus         @default(PENDING)
   saleType             SaleType              @default(CASH)
   dueDate              DateTime?
@@ -505,6 +509,7 @@ model Sale {
   returns              SaleReturn[]
   collectionAssignment CollectionAssignment?
   whatsappLogs         SaleWhatsAppLog[]
+  deliveryEvents       SaleDeliveryEvent[]
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
 
@@ -516,6 +521,26 @@ model Sale {
   @@index([status])
   @@index([paymentStatus])
   @@map("sales")
+}
+
+// Delivery history is keyed by sale + product, not SaleDetail ID: the existing
+// sales update flow may recreate detail IDs when quantities change.
+model SaleDeliveryEvent {
+  id           String   @id @default(cuid())
+  operationKey String   @unique
+  saleId       String
+  productId    String
+  userId       Int
+  kind         String
+  quantity     Int
+  createdAt    DateTime @default(now())
+  sale         Sale     @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([saleId, productId])
+  @@index([saleId, createdAt])
+  @@map("sale_delivery_events")
 }
 
 enum WhatsAppSendStatus {
