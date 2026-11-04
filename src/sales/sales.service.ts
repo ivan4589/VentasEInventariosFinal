@@ -694,6 +694,7 @@ export class SalesService {
               dueDate: parsedDueDate,
               status:
                 $Enums.SaleStatus.PENDING,
+              deliveryMode: createSaleDto.deliveryMode === true,
               paymentStatus,
               subtotal,
               discount,
@@ -739,7 +740,7 @@ export class SalesService {
 
     if (
       paymentStatus ===
-      $Enums.PaymentStatus.PAID
+      $Enums.PaymentStatus.PAID && !createSaleDto.deliveryMode
     ) {
       return this.confirm(sale.id, userId);
     }
@@ -785,6 +786,22 @@ export class SalesService {
           throw new BadRequestException(
             'Solo se pueden confirmar ventas pendientes',
           );
+        }
+
+        // Only opt-in mobile delivery sales require proof of physical delivery.
+        // This check executes under the same advisory lock used by both trucks.
+        if (sale.deliveryMode) {
+          const events = await prisma.saleDeliveryEvent.findMany({ where: { saleId: id } });
+          const delivered = new Map<string, number>();
+          for (const event of events) {
+            delivered.set(event.productId, (delivered.get(event.productId) ?? 0) +
+              (event.kind === 'DELIVER' ? event.quantity : -event.quantity));
+          }
+          if (!sale.details.length || sale.details.some(detail =>
+            (delivered.get(detail.productId) ?? 0) !== detail.quantity
+          )) {
+            throw new BadRequestException('Todos los productos deben estar entregados antes de confirmar');
+          }
         }
 
         for (const detail of sale.details) {
@@ -975,6 +992,14 @@ export class SalesService {
       async (prisma) => {
         await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${id})::bigint) IS NULL AS locked`;
 
+        // A delivery record references sale + product rather than detail ID.
+        // Block legacy edit after delivery begins; mobile uses /delivery/quantity.
+        const latestSale = await prisma.sale.findUniqueOrThrow({ where: { id } });
+        if (latestSale.deliveryMode &&
+          (await prisma.saleDeliveryEvent.count({ where: { saleId: id } })) > 0) {
+          throw new BadRequestException('Use el ajuste de reparto; ya hay productos entregados');
+        }
+
         if (detailsToUpdate) {
           const {
             centralWarehouse,
@@ -1107,6 +1132,7 @@ export class SalesService {
             discount: finalDiscount,
             total,
             paymentStatus,
+            ...(current.deliveryMode ? { deliveryRevision: { increment: 1 } } : {}),
           },
         });
       },
@@ -1116,7 +1142,7 @@ export class SalesService {
 
     if (
       updated.paymentStatus ===
-      $Enums.PaymentStatus.PAID
+      $Enums.PaymentStatus.PAID && !current.deliveryMode
     ) {
       return this.confirm(id, actorId);
     }
