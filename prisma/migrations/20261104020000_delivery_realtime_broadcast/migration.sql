@@ -72,6 +72,44 @@ BEGIN
     AFTER INSERT OR UPDATE ON public."warehouse_stocks"
     FOR EACH ROW EXECUTE FUNCTION public.yungas_notify_inventory_realtime();
 
+  -- No direct SELECT grant on public."User" is needed for authenticated clients.
+  -- This function is the only elevated read used by the Realtime policy.
+  EXECUTE $function$
+    CREATE OR REPLACE FUNCTION public.yungas_realtime_can_listen()
+    RETURNS boolean
+    LANGUAGE sql
+    STABLE
+    SECURITY DEFINER
+    SET search_path = ''
+    AS $body$
+      SELECT
+        coalesce(auth.jwt() ->> 'yungas_user_id', '') ~ '^[0-9]{1,10}$'
+        AND coalesce(auth.jwt() ->> 'yungas_security_version', '') ~ '^[0-9]{1,10}$'
+        AND EXISTS (
+          SELECT 1 FROM public."User" u
+          WHERE u.id = (auth.jwt() ->> 'yungas_user_id')::integer
+            AND u."isActive" = true
+            AND u."status"::text = 'ACTIVE'
+            AND u."role"::text IN ('VENDEDOR', 'ADMIN')
+            AND u."securityVersion" = (auth.jwt() ->> 'yungas_security_version')::integer
+            AND (
+              auth.jwt() ->> 'yungas_session_id' IS NULL
+              OR EXISTS (
+                SELECT 1 FROM public.auth_sessions ses
+                WHERE ses.id = auth.jwt() ->> 'yungas_session_id'
+                  AND ses."userId" = u.id
+                  AND ses."revokedAt" IS NULL
+                  AND ses."expiresAt" > now()
+              )
+            )
+        );
+    $body$;
+  $function$;
+  REVOKE ALL ON FUNCTION public.yungas_realtime_can_listen() FROM PUBLIC;
+  GRANT EXECUTE ON FUNCTION public.yungas_realtime_can_listen() TO authenticated;
+  REVOKE ALL ON FUNCTION public.yungas_notify_sale_realtime() FROM PUBLIC;
+  REVOKE ALL ON FUNCTION public.yungas_notify_inventory_realtime() FROM PUBLIC;
+
   -- The user identity is not the Supabase Auth UUID. NestJS authenticates users
   -- and signs a separate, short-lived HS256 Realtime token with these claims:
   -- role=authenticated, yungas_user_id, yungas_security_version,
@@ -83,26 +121,7 @@ BEGIN
     USING (
       extension = 'broadcast'
       AND realtime.topic() IN ('yungas:delivery', 'yungas:inventory')
-      AND coalesce(auth.jwt() ->> 'yungas_user_id', '') ~ '^[0-9]{1,10}$'
-      AND coalesce(auth.jwt() ->> 'yungas_security_version', '') ~ '^[0-9]{1,10}$'
-      AND EXISTS (
-        SELECT 1 FROM public."User" u
-        WHERE u.id = (auth.jwt() ->> 'yungas_user_id')::integer
-          AND u."isActive" = true
-          AND u."status"::text = 'ACTIVE'
-          AND u."role"::text IN ('VENDEDOR', 'ADMIN')
-          AND u."securityVersion" = (auth.jwt() ->> 'yungas_security_version')::integer
-          AND (
-            auth.jwt() ->> 'yungas_session_id' IS NULL
-            OR EXISTS (
-              SELECT 1 FROM public.auth_sessions ses
-              WHERE ses.id = auth.jwt() ->> 'yungas_session_id'
-                AND ses."userId" = u.id
-                AND ses."revokedAt" IS NULL
-                AND ses."expiresAt" > now()
-            )
-          )
-      )
+      AND public.yungas_realtime_can_listen()
     );
 END;
 $setup$;
