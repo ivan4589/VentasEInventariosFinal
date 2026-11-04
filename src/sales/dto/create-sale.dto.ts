@@ -1,6 +1,7 @@
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsNotEmpty,
@@ -16,6 +17,11 @@ import { BonusAllocationDto } from './bonus-allocation.dto';
 import { SaleDetailDto } from './sale-detail.dto';
 
 export class CreateSaleDto {
+  // Opt-in: web-created sales retain the original confirmation behavior.
+  @IsOptional()
+  @IsBoolean()
+  deliveryMode?: boolean;
+
   @IsString()
   @IsNotEmpty()
   clientId: string;

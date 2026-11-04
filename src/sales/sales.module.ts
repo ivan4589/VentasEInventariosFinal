@@ -6,12 +6,14 @@ import { BonusReportController } from './bonuses/bonus-report.controller';
 import { BonusRulesService } from './bonuses/bonus-rules.service';
 import { BonusRulesController } from './bonuses/bonus-rules.controller';
 import { SalesController } from './sales.controller';
+import { DeliveryController } from './delivery.controller';
+import { DeliveryService } from './delivery.service';
 import { SalesService } from './sales.service';
 import { WhatsAppService } from './whatsapp.service';
 
 @Module({
   imports: [ReportsModule, AuthModule],
-  controllers: [SalesController, BonusRulesController, BonusReportController],
-  providers: [SalesService, WhatsAppService, BonusRulesService, BonusReportService],
+  controllers: [SalesController, DeliveryController, BonusRulesController, BonusReportController],
+  providers: [SalesService, DeliveryService, WhatsAppService, BonusRulesService, BonusReportService],
 })
 export class SalesModule {}
