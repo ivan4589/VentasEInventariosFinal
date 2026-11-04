@@ -20,5 +20,5 @@ CREATE UNIQUE INDEX "sale_delivery_events_operationKey_key" ON "sale_delivery_ev
 CREATE INDEX "sale_delivery_events_saleId_productId_idx" ON "sale_delivery_events"("saleId","productId");
 CREATE INDEX "sale_delivery_events_saleId_createdAt_idx" ON "sale_delivery_events"("saleId","createdAt");
 ALTER TABLE "sale_delivery_events" ADD CONSTRAINT "sale_delivery_events_saleId_fkey" FOREIGN KEY ("saleId") REFERENCES "sales"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "sale_delivery_events" ADD CONSTRAINT "sale_delivery_events_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "sale_delivery_events" ADD CONSTRAINT "sale_delivery_events_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "sale_delivery_events" ADD CONSTRAINT "sale_delivery_events_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
