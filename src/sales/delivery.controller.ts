@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, Min, Max, MaxDecimalPlaces } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { $Enums } from '../../generated/prisma/client';
 import { DataScopeService } from '../auth/authorization/data-scope.service';
