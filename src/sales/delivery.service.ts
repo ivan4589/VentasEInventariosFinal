@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { $Enums } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SalesService } from './sales.service';
 
@@ -124,18 +125,30 @@ export class DeliveryService {
    */
   async adjustQuantity(
     saleId: string, productId: string, quantity: number, expectedRevision: number,
+    actorRole: $Enums.Role, unitPrice?: number,
   ) {
     if (!Number.isSafeInteger(quantity) || quantity < 0)
       throw new BadRequestException('Cantidad invalida');
+    // Never trust the Android UI for price permissions.
+    if (unitPrice !== undefined) {
+      if (actorRole !== $Enums.Role.ADMIN)
+        throw new ForbiddenException('Solo el administrador puede modificar precios');
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0 ||
+          Math.abs(unitPrice * 100 - Math.round(unitPrice * 100)) > 0.000001)
+        throw new BadRequestException('El precio debe ser positivo y tener como maximo dos decimales');
+      if (quantity === 0)
+        throw new BadRequestException('No se puede asignar precio a un producto retirado');
+    }
     await this.prisma.$transaction(async tx => {
       await this.lock(tx, saleId);
       const sale = await this.pendingSale(tx, saleId);
       if (!sale.deliveryMode) throw new BadRequestException('El pedido no tiene reparto activo');
       if (sale.deliveryRevision !== expectedRevision)
         throw new ConflictException('El pedido cambio. Vuelva a cargar la informacion');
-      if (sale.bonusDetails.length)
-        throw new BadRequestException('Este pedido tiene bonificaciones: regularice su asignacion antes de cambiar cantidades');
       const existing = sale.details.find(d => d.productId === productId);
+      const delta = quantity - (existing?.quantity ?? 0);
+      if (sale.bonusDetails.length && delta !== 0)
+        throw new BadRequestException('Este pedido tiene bonificaciones: regularice su asignacion antes de cambiar cantidades');
       if (!existing && quantity === 0) throw new BadRequestException('Producto no incluido');
       if (sale.details.length === 1 && existing && quantity === 0)
         throw new BadRequestException('El pedido debe conservar al menos un producto');
@@ -143,7 +156,6 @@ export class DeliveryService {
       if (quantity < currentDelivered)
         throw new BadRequestException('No puede reducir por debajo de lo entregado; registre primero la devolucion');
 
-      const delta = quantity - (existing?.quantity ?? 0);
       const warehouse = await tx.warehouse.findFirst({ where: { isDefault: true, isActive: true } });
       if (!warehouse) throw new BadRequestException('Almacen Central no disponible');
       const product = await tx.product.findFirst({
@@ -172,9 +184,9 @@ export class DeliveryService {
         } });
       }
 
-      // Preserve an already agreed unit price for existing products.
-      // New products get the current automatic client/wholesale price.
-      const price = existing?.unitPrice ?? (
+      // Preserve an agreed price unless ADMIN explicitly overrides it.
+      // For new products, otherwise use the standard client/wholesale price.
+      const price = unitPrice ?? existing?.unitPrice ?? (
         sale.client.type === 'CAMINO' ? product.priceCamino :
         sale.client.type === 'ESPECIAL' ? product.priceEspecial :
         product.priceMayorista != null && product.minQuantityWholesale != null &&
@@ -185,7 +197,7 @@ export class DeliveryService {
           await tx.saleDetail.delete({ where: { id: existing.id } });
         } else {
           await tx.saleDetail.update({ where: { id: existing.id }, data: {
-            quantity, subtotal: Math.round(quantity * price * 100) / 100,
+            quantity, unitPrice: price, subtotal: Math.round(quantity * price * 100) / 100,
           } });
         }
       } else {
