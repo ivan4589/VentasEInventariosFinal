@@ -125,7 +125,7 @@ export class DeliveryService {
    */
   async adjustQuantity(
     saleId: string, productId: string, quantity: number, expectedRevision: number,
-    actorRole: $Enums.Role, unitPrice?: number,
+    actorRole: $Enums.Role = $Enums.Role.VENDEDOR, unitPrice?: number,
   ) {
     if (!Number.isSafeInteger(quantity) || quantity < 0)
       throw new BadRequestException('Cantidad invalida');
@@ -197,7 +197,7 @@ export class DeliveryService {
           await tx.saleDetail.delete({ where: { id: existing.id } });
         } else {
           await tx.saleDetail.update({ where: { id: existing.id }, data: {
-            quantity, unitPrice: price, subtotal: Math.round(quantity * price * 100) / 100,
+            quantity, ...(unitPrice !== undefined ? { unitPrice: price } : {}), subtotal: Math.round(quantity * price * 100) / 100,
           } });
         }
       } else {
