@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { $Enums } from '../../generated/prisma/client';
 import { DeliveryService } from './delivery.service';
 
 describe('DeliveryService — two-truck invariants', () => {
@@ -101,5 +102,56 @@ describe('DeliveryService — two-truck invariants', () => {
     await expect(service.adjustQuantity('sale-1', 'p1', 7, 3))
       .rejects.toThrow(BadRequestException);
     expect(tx.saleDetail.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a vendor attempting to override the unit price', async () => {
+    await expect(service.adjustQuantity('sale-1', 'p1', 5, 3, $Enums.Role.VENDEDOR, 12))
+      .rejects.toThrow(ForbiddenException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('allows ADMIN to change the agreed price without altering inventory or delivery events', async () => {
+    tx.saleDetail.findMany.mockResolvedValue([{ productId: 'p1', quantity: 5, subtotal: 62.5 }]);
+    await service.adjustQuantity('sale-1', 'p1', 5, 3, $Enums.Role.ADMIN, 12.5);
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(tx.product.update).not.toHaveBeenCalled();
+    expect(tx.saleDeliveryEvent.create).not.toHaveBeenCalled();
+    expect(tx.saleDetail.update).toHaveBeenCalledWith({
+      where: { id: 'detail-1' },
+      data: { quantity: 5, unitPrice: 12.5, subtotal: 62.5 },
+    });
+    expect(tx.sale.update).toHaveBeenCalledWith({
+      where: { id: 'sale-1' },
+      data: {
+        subtotal: 62.5, total: 62.5, paymentStatus: 'PENDING',
+        deliveryRevision: { increment: 1 },
+      },
+    });
+  });
+
+  it('rejects malformed manual prices', async () => {
+    for (const price of [0, -1, 12.345, Number.POSITIVE_INFINITY]) {
+      await expect(service.adjustQuantity('sale-1', 'p1', 5, 3, $Enums.Role.ADMIN, price))
+        .rejects.toThrow(BadRequestException);
+    }
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('adds a new product with an ADMIN-approved unit price', async () => {
+    tx.product.findFirst.mockResolvedValue({
+      id: 'p2', priceNormal: 10, priceCamino: 10, priceEspecial: 10,
+      priceMayorista: null, minQuantityWholesale: null,
+    });
+    tx.saleDetail.findMany.mockResolvedValue([
+      { productId: 'p1', quantity: 5, subtotal: 50 },
+      { productId: 'p2', quantity: 2, subtotal: 27 },
+    ]);
+    await service.adjustQuantity('sale-1', 'p2', 2, 3, $Enums.Role.ADMIN, 13.5);
+    expect(tx.saleDetail.create).toHaveBeenCalledWith({
+      data: { saleId: 'sale-1', productId: 'p2', quantity: 2, unitPrice: 13.5, subtotal: 27 },
+    });
+    expect(tx.product.update).toHaveBeenCalledWith({
+      where: { id: 'p2' }, data: { reservedStock: { increment: 2 } },
+    });
   });
 });
