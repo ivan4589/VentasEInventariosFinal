@@ -65,6 +65,10 @@ function createPrisma() {
     },
   };
 
+  // Mirror Prisma's findUniqueOrThrow in the transaction mock. Tests configure
+  // findUnique per scenario, so both query methods must see the same row.
+  prisma.sale.findUniqueOrThrow = jest.fn((args: any) => prisma.sale.findUnique(args));
+
   prisma.$executeRaw = jest.fn().mockResolvedValue(1);
   prisma.$queryRaw = jest.fn().mockResolvedValue([{locked:true}]);
   prisma.$transaction = jest.fn(async (operation: (tx: any) => unknown) =>
