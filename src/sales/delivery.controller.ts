@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
-import { IsIn, IsInt, IsString, Min } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { $Enums } from '../../generated/prisma/client';
 import { DataScopeService } from '../auth/authorization/data-scope.service';
@@ -21,6 +21,9 @@ class DeliveryQuantityDto {
   @IsString() productId!: string;
   @Type(() => Number) @IsInt() @Min(0) quantity!: number;
   @Type(() => Number) @IsInt() @Min(0) expectedRevision!: number;
+  // Optional: existing mobile clients can continue updating quantities unchanged.
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) @Max(100000000)
+  unitPrice?: number;
 }
 
 @Controller('sales/:id/delivery')
@@ -58,7 +61,7 @@ export class DeliveryController {
   @Permissions(PERMISSIONS.SALES_UPDATE_ALL)
   async adjust(@Param('id') id: string, @Body() body: DeliveryQuantityDto, @Request() req: any) {
     await this.scope.assertCanManagePresale(id, req.user);
-    return this.delivery.adjustQuantity(id, body.productId, body.quantity, body.expectedRevision);
+    return this.delivery.adjustQuantity(id, body.productId, body.quantity, body.expectedRevision, req.user.role, body.unitPrice);
   }
 
   @Patch('confirm')
